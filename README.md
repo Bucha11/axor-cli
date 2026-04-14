@@ -1,8 +1,8 @@
 # axor-cli
 
-[![CI](https://github.com/Bucha11/axor-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Bucha11/axor-cli/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/axor-cli)](https://pypi.org/project/axor-cli/)
-[![Python](https://img.shields.io/pypi/pyversions/axor-cli)](https://pypi.org/project/axor-cli/)
+[![CI](https://github.com/Bucha11/axor-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Bucha11/axor-cli/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/axor-cli?cacheSeconds=300)](https://pypi.org/project/axor-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/axor-cli?cacheSeconds=300)](https://pypi.org/project/axor-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 
