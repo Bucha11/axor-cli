@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "axor-cli"
+version = "0.1.0"
+description = "CLI for axor-core governance kernel — governed agent sessions in your terminal"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["cli", "agents", "governance", "axor", "claude", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Terminals",
+]
+
+# axor-core required; adapters are optional — install what you need
+dependencies = [
+    "axor-core>=0.1.0",
+]
+
+[project.optional-dependencies]
+claude = ["axor-claude>=0.1.0"]
+openai = ["axor-openai>=0.1.0"]
+all    = ["axor-claude>=0.1.0", "axor-openai>=0.1.0"]
+dev    = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+axor = "axor_cli.main:main"
+
+[project.urls]
+"Bug Tracker" = "https://github.com/Bucha11/axor-cli/issues"
+Changelog = "https://github.com/Bucha11/axor-cli/releases"
+Repository = "https://github.com/Bucha11/axor-cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["axor_cli"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
