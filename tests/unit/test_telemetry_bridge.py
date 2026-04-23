@@ -104,3 +104,69 @@ def test_slash_unknown_subcommand_returns_nonzero(_isolate_home):
     rc = bridge.handle_slash("/telemetry zxcv", stream=stream)
     assert rc == 2
     assert "unknown subcommand" in stream.getvalue()
+
+
+def test_slash_preview_when_queue_populated(_isolate_home):
+    # Write a queued record directly, then preview via /telemetry.
+    from axor_telemetry import TelemetryConfig, TelemetryMode
+    queue = _isolate_home / "q.jsonl"
+    queue.write_text('{"signal_chosen": "focused_readonly"}\n', encoding="utf-8")
+    TelemetryConfig(mode=TelemetryMode.LOCAL, queue_path=str(queue)).write()
+
+    stream = io.StringIO()
+    rc = bridge.handle_slash("/telemetry preview", stream=stream)
+    assert rc == 0
+    assert "focused_readonly" in stream.getvalue()
+
+
+def test_slash_consent_prints_hint(_isolate_home):
+    stream = io.StringIO()
+    rc = bridge.handle_slash("/telemetry consent", stream=stream)
+    assert rc == 0
+    assert "python -m axor_telemetry consent" in stream.getvalue()
+
+
+def test_bridge_graceful_when_package_missing(monkeypatch, _isolate_home):
+    """When axor-telemetry is unavailable, bridge degrades to no-ops."""
+    # Force _is_importable to report absent.
+    monkeypatch.setattr(bridge, "_is_importable", lambda: False)
+    assert bridge.current_mode() == "unknown"
+    assert bridge.build_pipeline() is None
+
+    stream = io.StringIO()
+    # banner no-ops when package unavailable
+    bridge.maybe_show_first_run_banner(stream=stream)
+    assert stream.getvalue() == ""
+
+    # handle_slash prints install hint
+    stream2 = io.StringIO()
+    rc = bridge.handle_slash("/telemetry on", stream=stream2)
+    assert rc == 1
+    assert "pip install" in stream2.getvalue()
+
+
+def test_banner_tolerates_config_load_failure(monkeypatch, _isolate_home):
+    """If TelemetryConfig.load raises, banner must silently no-op."""
+    import axor_telemetry
+
+    class Boom:
+        @classmethod
+        def load(cls, config_path=None):
+            raise RuntimeError("disk error")
+
+    monkeypatch.setattr(axor_telemetry, "TelemetryConfig", Boom)
+    stream = io.StringIO()
+    bridge.maybe_show_first_run_banner(stream=stream)
+    assert stream.getvalue() == ""
+
+
+def test_current_mode_tolerates_exception(monkeypatch, _isolate_home):
+    import axor_telemetry
+
+    class Broken:
+        @classmethod
+        def load(cls, config_path=None):
+            raise RuntimeError("x")
+
+    monkeypatch.setattr(axor_telemetry, "TelemetryConfig", Broken)
+    assert bridge.current_mode() == "unknown"
