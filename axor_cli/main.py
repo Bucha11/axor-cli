@@ -27,7 +27,7 @@ for _candidate in [
         sys.path.insert(0, os.path.abspath(_candidate))
         break
 
-from axor_cli import display, auth, adapters, streaming
+from axor_cli import display, auth, adapters, streaming, telemetry
 from axor_cli._version import __version__
 
 
@@ -38,6 +38,10 @@ Built-in commands:
   /auth              Set or update API key (saved to ~/.axor/config.toml)
   /auth --clear      Remove saved API key
   /auth --show       Show where key is loaded from (never shows the key)
+  /telemetry         Show telemetry status
+  /telemetry on      Enable local telemetry (adds --remote to also ship)
+  /telemetry off     Disable telemetry
+  /telemetry preview Print the last queued telemetry record
   /cost              Token usage for this session
   /policy            Last execution policy
   /compact           Compress context (reduces token usage)
@@ -182,6 +186,7 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
                             soft_token_limit=args.limit,
                             load_skills=not args.no_skills,
                             load_plugins=not args.no_plugins,
+                            telemetry=telemetry.build_pipeline(axor_version=__version__),
                         )
                         session = new_session
                         display.print_success("Session ready.")
@@ -203,6 +208,11 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
             else:
                 display.print_info(f"Model switching requires session restart. "
                                    f"Restart with: axor {adapter} --model {parts[1]}")
+            continue
+
+        # ── /telemetry (CLI-local, not governance) ─────────────────────────────
+        if line.startswith("/telemetry"):
+            telemetry.handle_slash(line)
             continue
 
         # ── Governed slash commands (forwarded to session) ─────────────────────
@@ -264,6 +274,10 @@ async def async_main() -> int:
             display.print_error("No API key. Exiting.")
             return 1
 
+    # one-time opt-in banner (no-op after first run, suppressed by AXOR_NO_BANNER)
+    telemetry.maybe_show_first_run_banner()
+    pipeline = telemetry.build_pipeline(axor_version=__version__)
+
     # build session
     try:
         session = adapters.build_session(
@@ -274,6 +288,7 @@ async def async_main() -> int:
             soft_token_limit=args.limit,
             load_skills=not args.no_skills,
             load_plugins=not args.no_plugins,
+            telemetry=pipeline,
         )
     except Exception as e:
         display.print_error(f"Could not start session: {e}")

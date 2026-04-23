@@ -60,6 +60,7 @@ def build_session(
     system_prompt: str | None = None,
     load_skills: bool = True,
     load_plugins: bool = True,
+    telemetry: Any | None = None,
 ) -> GovernedSession:
     """
     Import the adapter package and build a GovernedSession.
@@ -93,6 +94,9 @@ def build_session(
     }
     if soft_token_limit is not None:
         kwargs["soft_token_limit"] = soft_token_limit
+
+    if telemetry is not None:
+        kwargs["telemetry"] = telemetry
 
     # model and system_prompt are passed to the executor inside make_session
     # adapters should accept **session_kwargs and forward to their executor
