@@ -68,10 +68,11 @@ async def _stream_run(
     summary: dict[str, Any],
 ) -> None:
     text_received = False
-    executor = session._executor
 
-    # streaming path — adapter exposes set_text_callback()
-    if hasattr(executor, "set_text_callback"):
+    # streaming path — session.executor exposes set_text_callback()
+    # Use getattr to avoid depending on GovernedSession internals
+    executor = getattr(session, "executor", None) or getattr(session, "_executor", None)
+    if executor and hasattr(executor, "set_text_callback"):
         def on_text(chunk: str) -> None:
             nonlocal text_received
             if not text_received:
