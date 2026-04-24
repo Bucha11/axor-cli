@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "axor-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "CLI for axor-core governance kernel — governed agent sessions in your terminal"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,9 +21,11 @@ classifiers = [
     "Topic :: Terminals",
 ]
 
-# axor-core required; adapters are optional — install what you need
+# axor-core required; adapters are optional — install what you need.
+# >=0.3.0 because build_session forwards the `telemetry` kwarg that was
+# added to GovernedSession in that release.
 dependencies = [
-    "axor-core>=0.1.0",
+    "axor-core>=0.3.0",
 ]
 
 [project.optional-dependencies]
