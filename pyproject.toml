@@ -27,10 +27,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-claude = ["axor-claude>=0.1.0"]
-openai = ["axor-openai>=0.1.0"]
-all    = ["axor-claude>=0.1.0", "axor-openai>=0.1.0"]
-dev    = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+claude    = ["axor-claude>=0.1.0"]
+openai    = ["axor-openai>=0.1.0"]
+telemetry = ["axor-telemetry>=0.1.0"]
+all       = ["axor-claude>=0.1.0", "axor-openai>=0.1.0", "axor-telemetry>=0.1.0"]
+dev       = ["pytest>=8.0", "pytest-asyncio>=0.23", "axor-telemetry>=0.1.0"]
 
 [project.scripts]
 axor = "axor_cli.main:main"
