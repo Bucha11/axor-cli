@@ -8,7 +8,7 @@ Usage:
     axor claude "refactor auth module"  # single task and exit
     axor claude --policy readonly       # with preset policy
     axor claude --limit 100000          # with soft token limit
-    axor claude --model claude-opus-4-5 # specific model
+    axor claude --model claude-opus-4-7 # specific model
     axor --list-adapters                # show available adapters
 """
 

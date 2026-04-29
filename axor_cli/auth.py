@@ -222,21 +222,69 @@ def _read_config_file() -> dict[str, Any]:
         return tomllib.load(f)  # type: ignore
 
 
+class ConfigCorruptError(RuntimeError):
+    """Raised when an existing config exists but cannot be parsed."""
+
+
 def _load_existing_config() -> dict[str, Any]:
-    """Load existing config or return empty dict if not available."""
+    """Load existing config.
+
+    - Returns an empty dict when the file does not exist (first-time setup).
+    - Returns an empty dict when tomllib is unavailable (best effort).
+    - Raises `ConfigCorruptError` when the file exists but cannot be parsed.
+      The previous behaviour (silently returning {}) caused `save_to_config`
+      to overwrite the broken file, dropping any *other* adapter's saved key.
+      Refusing to write preserves user data.
+    """
     if not CONFIG_FILE.exists() or tomllib is None:
         return {}
-    
+
     try:
         return _read_config_file()
     except Exception as e:
-        logger.warning("Failed to read existing config: %s", e)
-        return {}
+        logger.error(
+            "Refusing to overwrite unreadable config %s (%s). "
+            "Fix or delete the file before retrying.",
+            CONFIG_FILE, e,
+        )
+        raise ConfigCorruptError(str(e)) from e
 
 
 def _escape_toml_value(val: str) -> str:
-    """Escape a string for TOML double-quoted value."""
-    return val.replace("\\", "\\\\").replace('"', '\\"')
+    """Escape a string for a TOML basic (double-quoted) string.
+
+    Per the TOML spec, a basic string may contain `\\b`, `\\t`, `\\n`, `\\f`,
+    `\\r`, `\\"`, and `\\\\` literal escapes; any other control character
+    (U+0000–U+001F except those listed) must be `\\uXXXX`-escaped. Plain
+    `replace("\\\\", "\\\\\\\\").replace('"', '\\\\"')` drops a newline or
+    NUL into the TOML output as a literal byte, producing a file that
+    crashes the next `tomllib.load()`.
+
+    Pasted API keys generally do not contain newlines, but if a user pastes
+    "sk-...\\n" by accident the previous escape would brick the config.
+    """
+    out: list[str] = []
+    for ch in val:
+        code = ord(ch)
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch == "\b":
+            out.append("\\b")
+        elif ch == "\f":
+            out.append("\\f")
+        elif code < 0x20 or code == 0x7F:
+            out.append(f"\\u{code:04X}")
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _serialize_config_to_toml(data: dict[str, Any]) -> str:

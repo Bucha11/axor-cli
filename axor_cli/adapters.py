@@ -17,8 +17,8 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "module":   "axor_claude",
         "install":  "pip install axor-claude",
         "env_var":  "ANTHROPIC_API_KEY",
-        "models":   ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"],
-        "default_model": "claude-sonnet-4-5",
+        "models":   ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
+        "default_model": "claude-sonnet-4-6",
     },
     "openai": {
         "module":   "axor_openai",

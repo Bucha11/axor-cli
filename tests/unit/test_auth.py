@@ -127,3 +127,40 @@ def test_load_corrupted_file_returns_none(tmp_home):
     auth_mod.CONFIG_FILE.write_text("not valid [[[ toml")
     result = auth_mod.load_from_config("claude")
     assert result is None
+
+
+# ── escape / corruption ──────────────────────────────────────────────────────
+
+
+def test_key_with_newline_survives_roundtrip(tmp_home):
+    """Regression: previously a `\\n` in the key produced a TOML file that
+    parsed as a broken multi-line string, bricking the config until manual fix.
+    """
+    weird = "sk-line1\nline2\rline3\twith-tab"
+    auth_mod.save_to_config("claude", weird)
+    assert auth_mod.load_from_config("claude") == weird
+
+
+def test_key_with_nul_byte_survives_roundtrip(tmp_home):
+    """NUL is invalid in TOML basic strings; must be \\u-escaped."""
+    weird = "sk-with\x00nul"
+    auth_mod.save_to_config("claude", weird)
+    assert auth_mod.load_from_config("claude") == weird
+
+
+def test_key_with_control_chars_survives_roundtrip(tmp_home):
+    weird = "sk-\x01\x02\x1ftest"
+    auth_mod.save_to_config("claude", weird)
+    assert auth_mod.load_from_config("claude") == weird
+
+
+def test_save_refuses_to_overwrite_unparseable_config(tmp_home):
+    """If the existing config is corrupt, refuse to save — overwriting
+    silently would drop other adapters' keys.
+    """
+    auth_mod.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    auth_mod.CONFIG_FILE.write_text("[[ this is broken")
+    with pytest.raises(auth_mod.ConfigCorruptError):
+        auth_mod.save_to_config("claude", "sk-new")
+    # File contents preserved.
+    assert "[[ this is broken" in auth_mod.CONFIG_FILE.read_text()
