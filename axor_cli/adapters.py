@@ -3,8 +3,8 @@ from __future__ import annotations
 """
 Adapter registry for axor-cli.
 
-Adapters are loaded lazily — axor-claude / axor-openai are optional
-dependencies. Missing adapter gives a helpful install message.
+Adapters are loaded lazily — axor-claude / axor-openai / axor-openrouter are
+optional dependencies. Missing adapter gives a helpful install message.
 """
 
 from typing import Any
@@ -26,6 +26,19 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "env_var":  "OPENAI_API_KEY",
         "models":   ["gpt-4o", "gpt-4o-mini"],
         "default_model": "gpt-4o",
+    },
+    "openrouter": {
+        "module":  "axor_openrouter",
+        "install": "pip install axor-openrouter",
+        "env_var": "OPENROUTER_API_KEY",
+        "models": [
+            "anthropic/claude-opus-4-7",
+            "anthropic/claude-sonnet-4-6",
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "meta-llama/llama-3.3-70b-instruct:free",
+        ],
+        "default_model": "anthropic/claude-sonnet-4-6",
     },
 }
 

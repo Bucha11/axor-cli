@@ -15,6 +15,9 @@ Priority order (highest to lowest):
 
     [openai]
     api_key = "sk-..."
+
+    [openrouter]
+    api_key = "sk-or-..."
 """
 
 import getpass
@@ -44,8 +47,14 @@ CONFIG_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0600
 
 # Environment variable names per adapter
 _ENV_VARS: dict[str, str] = {
-    "claude": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
+    "claude":      "ANTHROPIC_API_KEY",
+    "openai":      "OPENAI_API_KEY",
+    "openrouter":  "OPENROUTER_API_KEY",
+}
+
+# Fallback env var names checked when the primary is not set
+_ENV_VARS_FALLBACK: dict[str, list[str]] = {
+    "openrouter": ["OPEN_KEY"],
 }
 
 
@@ -200,7 +209,14 @@ def _get_key_from_env(adapter: str) -> str | None:
     """Get API key from environment variable."""
     env_var = _ENV_VARS.get(adapter)
     if env_var:
-        return os.environ.get(env_var)
+        val = os.environ.get(env_var, "").strip()
+        if val:
+            return val
+    # check fallback env var names (e.g. OPEN_KEY for openrouter), strip whitespace
+    for fallback in _ENV_VARS_FALLBACK.get(adapter, []):
+        val = os.environ.get(fallback, "").strip()
+        if val:
+            return val
     return None
 
 
