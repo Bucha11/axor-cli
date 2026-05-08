@@ -15,6 +15,9 @@ Priority order (highest to lowest):
 
     [openai]
     api_key = "sk-..."
+
+    [openrouter]
+    api_key = "sk-or-..."
 """
 
 import getpass
@@ -44,8 +47,9 @@ CONFIG_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0600
 
 # Environment variable names per adapter
 _ENV_VARS: dict[str, str] = {
-    "claude": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
+    "claude":      "ANTHROPIC_API_KEY",
+    "openai":      "OPENAI_API_KEY",
+    "openrouter":  "OPENROUTER_API_KEY",
 }
 
 
@@ -64,7 +68,7 @@ def resolve_api_key(adapter: str, flag_key: str | None = None) -> str | None:
         3. Config file (~/.axor/config.toml)
     
     Args:
-        adapter: Name of the adapter (e.g., "claude", "openai")
+        adapter: Name of the adapter (e.g., "claude", "openai", "openrouter")
         flag_key: Optional API key from CLI flag (highest priority)
     
     Returns:
@@ -254,7 +258,7 @@ def _escape_toml_value(val: str) -> str:
     """Escape a string for a TOML basic (double-quoted) string.
 
     Per the TOML spec, a basic string may contain `\\b`, `\\t`, `\\n`, `\\f`,
-    `\\r`, `\\"`, and `\\\\` literal escapes; any other control character
+    `\\r`, `\\\"``, and `\\\\` literal escapes; any other control character
     (U+0000–U+001F except those listed) must be `\\uXXXX`-escaped. Plain
     `replace("\\\\", "\\\\\\\\").replace('"', '\\\\"')` drops a newline or
     NUL into the TOML output as a literal byte, producing a file that
