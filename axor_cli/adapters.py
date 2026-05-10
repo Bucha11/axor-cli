@@ -129,6 +129,11 @@ def build_session(
         kwargs["thinking_budget"] = thinking_budget
 
     if adapter == "openrouter":
+        from axor_cli.mcp_config import load_mcp_servers
+        mcp_servers = load_mcp_servers()
+        if mcp_servers:
+            kwargs["mcp_servers"] = mcp_servers
+
         from axor_cli.routing_config import load_routing_config, TierConfig
         rc = load_routing_config("openrouter")
         if rc.mode == "cascade" and rc.tiers:
