@@ -68,7 +68,7 @@ def build_session(
     adapter: str,
     api_key: str | None = None,
     model:   str | None = None,
-    tools:   tuple[str, ...] = ("read", "write", "edit", "bash", "search", "glob"),
+    tools:   tuple[str, ...] = ("read", "write", "edit", "bash", "search", "glob", "fetch"),
     soft_token_limit: int | None = None,
     system_prompt: str | None = None,
     load_skills: bool = True,

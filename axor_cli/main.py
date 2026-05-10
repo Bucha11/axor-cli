@@ -181,9 +181,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tools",
         nargs="+",
-        default=["read", "write", "edit", "bash", "search", "glob"],
+        default=["read", "write", "edit", "bash", "search", "glob", "fetch"],
         metavar="TOOL",
-        help="Tools to enable (default: read write edit bash search glob)",
+        help="Tools to enable (default: read write edit bash search glob fetch)",
     )
     parser.add_argument(
         "--yes", "-y",
