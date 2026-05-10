@@ -118,6 +118,36 @@ def build_session(
     if system_prompt:
         kwargs["system_prompt"] = system_prompt
 
+    # openrouter: apply routing config from ~/.axor/config.toml [openrouter.routing]
+    if adapter == "openrouter":
+        from axor_cli.routing_config import load_routing_config, TierConfig
+        rc = load_routing_config("openrouter")
+        if rc.mode == "cascade" and rc.tiers:
+            try:
+                from axor_openrouter.cascade.tiers import TierSpec
+                kwargs["tiers"] = [
+                    TierSpec(
+                        min_depth=t.min_depth,
+                        max_depth=t.max_depth,
+                        model=t.model,
+                        tier_index=t.tier_index,
+                    )
+                    for t in rc.tiers
+                ]
+                kwargs["smart_cascade"] = False
+            except ImportError:
+                pass
+        elif rc.mode == "flat":
+            kwargs["smart_cascade"] = False
+        else:  # smart (default)
+            kwargs["smart_cascade"] = True
+            if rc.prefer_free_at_depth != 3:
+                kwargs["prefer_free_at_depth"] = rc.prefer_free_at_depth
+            if rc.max_cost_in is not None:
+                kwargs["max_cost_in"] = rc.max_cost_in
+        if rc.root_model and not model:
+            kwargs["model"] = rc.root_model
+
     try:
         return mod.make_session(**kwargs)
     except ImportError as e:
