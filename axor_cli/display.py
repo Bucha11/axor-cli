@@ -10,6 +10,7 @@ Handles:
   - Colored output (degrades gracefully if no color support)
 """
 
+import asyncio
 import sys
 import os
 import time
@@ -162,6 +163,32 @@ def print_info(msg: str) -> None:
 
 def print_success(msg: str) -> None:
     print(f"\n{green('  ✓')} {msg}")
+
+
+# ── Tool approval ──────────────────────────────────────────────────────────────
+
+# Tools that run silently without asking the user.
+_AUTO_APPROVE = frozenset({"read", "search", "glob", "spawn_child"})
+
+
+async def prompt_approval(tool_name: str, args: dict) -> bool:
+    """
+    Ask the user to approve a tool call. Returns True to allow, False to deny.
+    read/search/glob/spawn_child are auto-approved (non-destructive).
+    """
+    if tool_name in _AUTO_APPROVE:
+        return True
+
+    args_str = _format_args(args)
+    label = f"{yellow(tool_name)}{dim('(' + args_str + ')')}"
+    prompt_str = f"  {label}  {dim('[y/N]')} "
+
+    try:
+        response = await asyncio.to_thread(input, prompt_str)
+        return response.strip().lower() in ("y", "yes", "")
+    except (KeyboardInterrupt, EOFError):
+        print()
+        return False
 
 
 # ── Prompt ─────────────────────────────────────────────────────────────────────

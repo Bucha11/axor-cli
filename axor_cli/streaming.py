@@ -23,6 +23,7 @@ async def run_task(
     session: GovernedSession,
     task: str,
     policy: ExecutionPolicy | None = None,
+    auto_approve: bool = False,
 ) -> dict[str, Any]:
     """
     Run a task and stream output to terminal.
@@ -42,7 +43,7 @@ async def run_task(
     }
 
     try:
-        await _stream_run(session, task, policy, spinner, summary)
+        await _stream_run(session, task, policy, spinner, summary, auto_approve)
     except asyncio.CancelledError:
         spinner.stop()
         summary["cancelled"] = True
@@ -66,6 +67,7 @@ async def _stream_run(
     policy: ExecutionPolicy | None,
     spinner: display.Spinner,
     summary: dict[str, Any],
+    auto_approve: bool = False,
 ) -> None:
     text_received = False
 
@@ -90,13 +92,24 @@ async def _stream_run(
     if executor and hasattr(executor, "set_tool_callbacks"):
         def on_tool_start(tool_name: str, args: dict) -> None:
             _ensure_spinner_stopped()
-            display.print_tool_call(tool_name, args, approved=True)
+            # In approval mode, on_tool_start just stops the spinner —
+            # the approval prompt shows the tool name inline.
+            # In auto-approve mode, print the tool call immediately.
+            if auto_approve or tool_name in display._AUTO_APPROVE:
+                display.print_tool_call(tool_name, args, approved=True)
 
         def on_tool_end(tool_name: str, args: dict, result: Any) -> None:
             approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
             display.print_tool_result(tool_name, str(result), approved=approved)
 
         executor.set_tool_callbacks(on_tool_start, on_tool_end)
+
+    if not auto_approve and executor and hasattr(executor, "set_approval_callback"):
+        async def on_approval(tool_name: str, args: dict) -> bool:
+            _ensure_spinner_stopped()
+            return await display.prompt_approval(tool_name, args)
+
+        executor.set_approval_callback(on_approval)
 
     result = await session.run(task, policy=policy)
 

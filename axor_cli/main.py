@@ -110,6 +110,11 @@ def _parse_args() -> argparse.Namespace:
         help="Tools to enable (default: read write edit bash search glob)",
     )
     parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Auto-approve all tool calls without prompting",
+    )
+    parser.add_argument(
         "--list-adapters",
         action="store_true",
         help="List available adapters and exit",
@@ -230,7 +235,7 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
             continue
 
         # ── Task ───────────────────────────────────────────────────────────────
-        await streaming.run_task(session, line, policy=policy_override)
+        await streaming.run_task(session, line, policy=policy_override, auto_approve=args.yes)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -305,7 +310,7 @@ async def async_main() -> int:
 
     # single task mode
     if args.task:
-        await streaming.run_task(session, args.task, policy=policy_override)
+        await streaming.run_task(session, args.task, policy=policy_override, auto_approve=args.yes)
         return 0
 
     # interactive REPL
