@@ -121,6 +121,7 @@ Built-in commands:
   /memory add <text> Save text to memory (persists across sessions)
   /memory forget <k> Delete memory by key
   /memory search <q> Full-text search memories
+  /todos             Show model's current task list
   /help              This message
 
 Shortcuts:
@@ -326,6 +327,15 @@ async def repl(
         # ── /telemetry (CLI-local, not governance) ─────────────────────────────
         if line.startswith("/telemetry"):
             telemetry.handle_slash(line)
+            continue
+
+        # ── /todos — show current model todo list ──────────────────────────────
+        if line in ("/todos", "/todo"):
+            store = getattr(session, "_todo_store", None)
+            if store is None or not store.read():
+                display.print_info("No todos yet. The model will create them when working on multi-step tasks.")
+            else:
+                print(f"\n{store.format()}")
             continue
 
         # ── Skill slash commands ────────────────────────────────────────────────

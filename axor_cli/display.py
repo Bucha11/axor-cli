@@ -201,7 +201,7 @@ def print_hook_block(tool: str, reason: str) -> None:
 # ── Tool approval ──────────────────────────────────────────────────────────────
 
 # Tools that run silently without asking the user.
-_AUTO_APPROVE = frozenset({"read", "search", "glob", "fetch", "spawn_child"})
+_AUTO_APPROVE = frozenset({"read", "search", "glob", "fetch", "spawn_child", "todo_write", "todo_read"})
 
 
 async def prompt_approval(tool_name: str, args: dict) -> bool:
