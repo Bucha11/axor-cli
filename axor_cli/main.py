@@ -34,6 +34,71 @@ from axor_cli.session_store import save_turn, SessionHistoryLoader
 from axor_cli.skill_commands import load_skill_commands
 
 
+# ── @file / @url expansion ─────────────────────────────────────────────────────
+
+import re as _re
+_AT_REF = _re.compile(r'@((?:https?://\S+)|(?:[\w./~-][^\s@]*\.\w+))')
+
+async def _expand_at_refs(text: str) -> str:
+    """
+    Expand @<path> and @<url> references in task text.
+
+    @./src/main.py        → reads file, prepends content block
+    @~/notes.md           → reads file from home dir
+    @https://example.com  → fetches URL, prepends content block
+
+    Refs are stripped from the task text; their content is prepended.
+    Unknown refs are left as-is with a warning comment.
+    """
+    refs = _AT_REF.findall(text)
+    if not refs:
+        return text
+
+    task_clean = _re.sub(r' {2,}', ' ', _AT_REF.sub("", text)).strip()
+    parts: list[str] = []
+
+    for ref in refs:
+        if ref.startswith("http://") or ref.startswith("https://"):
+            content = await _fetch_url(ref)
+        else:
+            content = _read_file(ref)
+
+        if content is None:
+            parts.append(f"[could not load @{ref}]")
+        else:
+            parts.append(f"<context src=\"{ref}\">\n{content}\n</context>")
+
+    return "\n\n".join(parts) + ("\n\n" + task_clean if task_clean else "")
+
+
+def _read_file(ref: str) -> str | None:
+    from pathlib import Path
+    path = Path(ref).expanduser()
+    if not path.exists():
+        # try relative to cwd
+        path = Path.cwd() / ref
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+async def _fetch_url(url: str) -> str | None:
+    import urllib.request
+    import urllib.error
+    try:
+        def _get() -> str:
+            req = urllib.request.Request(url, headers={"User-Agent": "axor-cli/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read(512_000)  # cap at 512 KB
+                charset = resp.headers.get_content_charset() or "utf-8"
+                return raw.decode(charset, errors="replace")
+        return await asyncio.to_thread(_get)
+    except Exception as exc:
+        display.print_info(f"@url fetch failed ({url}): {exc}")
+        return None
+
+
 # ── Built-in REPL commands ─────────────────────────────────────────────────────
 
 _HELP = """
@@ -311,10 +376,11 @@ async def repl(
 
         # ── Task ───────────────────────────────────────────────────────────────
         from axor_cli.images import build_multimodal_task
-        import re as _re
-        image_refs = _re.findall(r'\[image:\s*([^\]]+)\]', line)
-        task_text  = _re.sub(r'\[image:\s*[^\]]+\]', '', line).strip()
-        task_payload = build_multimodal_task(task_text or line, image_refs)
+        # expand @file/@url refs, then extract [image:] refs
+        expanded = await _expand_at_refs(line)
+        image_refs = _re.findall(r'\[image:\s*([^\]]+)\]', expanded)
+        task_text  = _re.sub(r'\[image:\s*[^\]]+\]', '', expanded).strip()
+        task_payload = build_multimodal_task(task_text or expanded, image_refs)
         summary = await streaming.run_task(
             session, task_payload, policy=policy_override,
             auto_approve=args.yes, hook_runner=hook_runner,
@@ -403,7 +469,8 @@ async def async_main() -> int:
     # single task mode
     if args.task:
         from axor_cli.images import build_multimodal_task
-        task_payload = build_multimodal_task(args.task, args.image)
+        expanded_task = await _expand_at_refs(args.task)
+        task_payload = build_multimodal_task(expanded_task, args.image)
         await streaming.run_task(
             session, task_payload, policy=policy_override,
             auto_approve=args.yes, hook_runner=hook_runner,
