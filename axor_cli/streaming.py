@@ -17,6 +17,7 @@ from axor_core.contracts.policy import ExecutionPolicy
 
 from axor_cli import display
 from axor_cli.hooks import HookRunner, load_hooks
+from axor_cli.permissions import load_permissions
 
 # Auto-compact when accumulated context exceeds this many tokens with no limit set.
 # With a soft_token_limit the budget engine fires COMPRESS_CONTEXT in the node;
@@ -170,15 +171,25 @@ async def _stream_run(
 
         executor.set_tool_callbacks(on_tool_start, on_tool_end)
 
-    # Always register approval callback — handles PreToolUse hooks and interactive approval.
+    # load permissions once for this task
+    perms = load_permissions()
+
+    # Always register approval callback — handles permissions, hooks, and interactive approval.
     if executor and hasattr(executor, "set_approval_callback"):
         async def on_approval(tool_name: str, args: dict) -> bool:
             _ensure_spinner_stopped()
+            # 1. settings.json pattern deny (highest priority)
+            denied, reason = perms.is_denied(tool_name, args)
+            if denied:
+                display.print_hook_block(tool_name, reason)
+                return False
+            # 2. PreToolUse hooks
             if hook_runner and hook_runner.has_pre_tool():
                 hook_ok, hook_msg = await hook_runner.run_pre_tool(tool_name, args)
                 if not hook_ok:
                     display.print_hook_block(tool_name, hook_msg)
                     return False
+            # 3. auto-approve or interactive prompt
             if auto_approve or tool_name in display._AUTO_APPROVE:
                 return True
             return await display.prompt_approval(tool_name, args)

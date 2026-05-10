@@ -86,6 +86,12 @@ def build_session(
         available = ", ".join(_REGISTRY.keys())
         raise ValueError(f"Unknown adapter: '{adapter}'. Available: {available}")
 
+    # apply settings.json permission rules before building the session
+    from axor_cli.permissions import load_permissions
+    perms = load_permissions()
+    if not perms.is_empty():
+        tools = perms.filter_tools(tools)
+
     try:
         mod = __import__(info["module"])
     except ImportError:
