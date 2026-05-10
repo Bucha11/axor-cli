@@ -29,6 +29,7 @@ for _candidate in [
 
 from axor_cli import display, auth, adapters, streaming, telemetry
 from axor_cli._version import __version__
+from axor_cli.session_store import save_turn, SessionHistoryLoader
 
 
 # ── Built-in REPL commands ─────────────────────────────────────────────────────
@@ -113,6 +114,25 @@ def _parse_args() -> argparse.Namespace:
         "--yes", "-y",
         action="store_true",
         help="Auto-approve all tool calls without prompting",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume previous session from this directory",
+    )
+    parser.add_argument(
+        "--image",
+        metavar="PATH",
+        action="append",
+        default=[],
+        help="Attach image file(s) to the task (can be repeated)",
+    )
+    parser.add_argument(
+        "--thinking",
+        type=int,
+        metavar="TOKENS",
+        default=None,
+        help="Enable extended thinking with this token budget (e.g. 8000)",
     )
     parser.add_argument(
         "--list-adapters",
@@ -235,7 +255,14 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
             continue
 
         # ── Task ───────────────────────────────────────────────────────────────
-        await streaming.run_task(session, line, policy=policy_override, auto_approve=args.yes)
+        from axor_cli.images import build_multimodal_task
+        import re as _re
+        image_refs = _re.findall(r'\[image:\s*([^\]]+)\]', line)
+        task_text  = _re.sub(r'\[image:\s*[^\]]+\]', '', line).strip()
+        task_payload = build_multimodal_task(task_text or line, image_refs)
+        summary = await streaming.run_task(session, task_payload, policy=policy_override, auto_approve=args.yes)
+        if summary.get("output"):
+            save_turn(line, summary["output"])
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -293,6 +320,8 @@ async def async_main() -> int:
             soft_token_limit=args.limit,
             load_skills=not args.no_skills,
             load_plugins=not args.no_plugins,
+            resume=args.resume,
+            thinking_budget=args.thinking,
             telemetry=pipeline,
         )
     except Exception as e:
@@ -310,7 +339,9 @@ async def async_main() -> int:
 
     # single task mode
     if args.task:
-        await streaming.run_task(session, args.task, policy=policy_override, auto_approve=args.yes)
+        from axor_cli.images import build_multimodal_task
+        task_payload = build_multimodal_task(args.task, args.image)
+        await streaming.run_task(session, task_payload, policy=policy_override, auto_approve=args.yes)
         return 0
 
     # interactive REPL

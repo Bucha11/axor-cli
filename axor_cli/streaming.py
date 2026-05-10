@@ -40,6 +40,7 @@ async def run_task(
         "output_tokens": 0,
         "cancelled":     False,
         "error":         None,
+        "output":        "",
     }
 
     try:
@@ -89,18 +90,47 @@ async def _stream_run(
 
         executor.set_text_callback(on_text)
 
+    # Capture pre-edit file content for diff display.
+    _pre_edit: dict[str, str] = {}
+
+    def _capture_pre_edit(tool_name: str, args: dict) -> None:
+        if tool_name in ("edit", "write"):
+            path = args.get("path") or args.get("file_path") or ""
+            if path:
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        _pre_edit[path] = f.read()
+                except OSError:
+                    _pre_edit[path] = ""
+
+    def _show_diff(tool_name: str, args: dict, result: Any) -> None:
+        if tool_name not in ("edit", "write"):
+            return
+        approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
+        if not approved:
+            return
+        path = args.get("path") or args.get("file_path") or ""
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                new_content = f.read()
+        except OSError:
+            return
+        old_content = _pre_edit.get(path, "")
+        display.print_diff(old_content, new_content, path)
+
     if executor and hasattr(executor, "set_tool_callbacks"):
         def on_tool_start(tool_name: str, args: dict) -> None:
             _ensure_spinner_stopped()
-            # In approval mode, on_tool_start just stops the spinner —
-            # the approval prompt shows the tool name inline.
-            # In auto-approve mode, print the tool call immediately.
+            _capture_pre_edit(tool_name, args)
             if auto_approve or tool_name in display._AUTO_APPROVE:
                 display.print_tool_call(tool_name, args, approved=True)
 
         def on_tool_end(tool_name: str, args: dict, result: Any) -> None:
             approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
             display.print_tool_result(tool_name, str(result), approved=approved)
+            _show_diff(tool_name, args, result)
 
         executor.set_tool_callbacks(on_tool_start, on_tool_end)
 
@@ -128,6 +158,7 @@ async def _stream_run(
     summary["input_tokens"]  = result.token_usage.input_tokens
     summary["output_tokens"] = result.token_usage.output_tokens
     summary["cancelled"]     = result.metadata.get("cancelled", False)
+    summary["output"]        = result.output or ""
 
     display.print_completion(
         policy=summary["policy"],

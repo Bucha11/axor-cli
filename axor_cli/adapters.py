@@ -73,6 +73,8 @@ def build_session(
     system_prompt: str | None = None,
     load_skills: bool = True,
     load_plugins: bool = True,
+    resume: bool = False,
+    thinking_budget: int | None = None,
     telemetry: Any | None = None,
 ) -> GovernedSession:
     """
@@ -119,6 +121,13 @@ def build_session(
         kwargs["system_prompt"] = system_prompt
 
     # openrouter: apply routing config from ~/.axor/config.toml [openrouter.routing]
+    if resume:
+        from axor_cli.session_store import SessionHistoryLoader
+        kwargs["_extra_loaders"] = [SessionHistoryLoader()]
+
+    if thinking_budget is not None:
+        kwargs["thinking_budget"] = thinking_budget
+
     if adapter == "openrouter":
         from axor_cli.routing_config import load_routing_config, TierConfig
         rc = load_routing_config("openrouter")

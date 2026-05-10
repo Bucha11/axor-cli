@@ -11,6 +11,7 @@ Handles:
 """
 
 import asyncio
+import difflib
 import sys
 import os
 import time
@@ -109,6 +110,27 @@ def stream_text(text: str) -> None:
     """Print a text chunk as it arrives from the stream."""
     sys.stdout.write(text)
     sys.stdout.flush()
+
+
+def print_diff(old: str, new: str, path: str = "") -> None:
+    """Print a compact unified diff for edit/write operations."""
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    label = f" {dim(path)}" if path else ""
+    diff = list(difflib.unified_diff(old_lines, new_lines, lineterm="", n=2))
+    if not diff:
+        return
+    print(f"\n{dim('  diff')}{label}")
+    for line in diff[2:]:  # skip ---/+++ header lines
+        line = line.rstrip("\n")
+        if line.startswith("+"):
+            print(f"  {green(line)}")
+        elif line.startswith("-"):
+            print(f"  {red(line)}")
+        elif line.startswith("@@"):
+            print(f"  {dim(line)}")
+        else:
+            print(f"  {dim(line)}")
 
 
 def print_tool_call(tool: str, args: dict, approved: bool) -> None:
