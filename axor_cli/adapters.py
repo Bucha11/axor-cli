@@ -101,11 +101,17 @@ def build_session(
             "Check your axor adapter version."
         )
 
+    # memory provider — SQLite-backed, scoped to project directory
+    from axor_cli.memory_provider import SQLiteMemoryProvider, project_namespace
+    _mem = SQLiteMemoryProvider()
+
     kwargs: dict[str, Any] = {
-        "api_key":     api_key,
-        "tools":       tools,
-        "load_skills": load_skills,
-        "load_plugins": load_plugins,
+        "api_key":         api_key,
+        "tools":           tools,
+        "load_skills":     load_skills,
+        "load_plugins":    load_plugins,
+        "memory_provider": _mem,
+        "memory_namespace": project_namespace(),
     }
     if soft_token_limit is not None:
         kwargs["soft_token_limit"] = soft_token_limit

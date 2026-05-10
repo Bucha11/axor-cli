@@ -48,10 +48,18 @@ Built-in commands:
   /cost              Token usage for this session
   /policy            Last execution policy
   /compact           Compress context (reduces token usage)
+  /clear             Clear context fragments and cache
   /status            Session overview
   /model <name>      Switch model (adapter must support it)
   /tools             Show tools available to current policy
+  /memory            List saved memories
+  /memory add <text> Save text to memory (persists across sessions)
+  /memory forget <k> Delete memory by key
+  /memory search <q> Full-text search memories
   /help              This message
+
+Shortcuts:
+  !<text>            Shorthand for /memory add <text>
   exit / quit / ^D   Exit axor
 """.strip()
 
@@ -291,6 +299,14 @@ async def repl(
                 else:
                     # context commands and passthrough — plain output
                     print(f"\n{output}")
+            continue
+
+        # ── !remember shortcut → /memory add ──────────────────────────────────
+        if line.startswith("!") and not line.startswith("!#"):
+            text = line[1:].strip()
+            if text:
+                await session.save_memory(text)
+                display.print_success(f"Saved to memory: {text[:60]}")
             continue
 
         # ── Task ───────────────────────────────────────────────────────────────
