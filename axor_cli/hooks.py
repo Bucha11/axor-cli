@@ -117,6 +117,9 @@ class HookRunner:
     def __init__(self, config: HookConfig) -> None:
         self._cfg = config
 
+    def is_empty(self) -> bool:
+        return self._cfg.is_empty()
+
     def has_pre_tool(self) -> bool:
         return bool(self._cfg.pre_tool)
 

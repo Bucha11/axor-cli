@@ -105,6 +105,8 @@ async def _stream_run(
 ) -> None:
     text_received = False
     renderer = display.MarkdownRenderer()
+    # tools the user approved with 'a' (always) this session
+    _session_always_approved: set[str] = set()
 
     # streaming path — session.executor exposes set_text_callback()
     # Use getattr to avoid depending on GovernedSession internals
@@ -158,7 +160,7 @@ async def _stream_run(
         def on_tool_start(tool_name: str, args: dict) -> None:
             _ensure_spinner_stopped()
             _capture_pre_edit(tool_name, args)
-            if auto_approve or tool_name in display._AUTO_APPROVE:
+            if auto_approve or tool_name in display._AUTO_APPROVE or tool_name in _session_always_approved:
                 display.print_tool_call(tool_name, args, approved=True)
 
         def on_tool_end(tool_name: str, args: dict, result: Any) -> None:
@@ -190,10 +192,17 @@ async def _stream_run(
                 if not hook_ok:
                     display.print_hook_block(tool_name, hook_msg)
                     return False
-            # 3. auto-approve or interactive prompt
+            # 3. session-level always-approved (user pressed 'a' earlier)
+            if tool_name in _session_always_approved:
+                return True
+            # 4. auto-approve or interactive prompt
             if auto_approve or tool_name in display._AUTO_APPROVE:
                 return True
-            return await display.prompt_approval(tool_name, args)
+            approved, always = await display.prompt_approval(tool_name, args)
+            if approved and always:
+                _session_always_approved.add(tool_name)
+                display.print_info(f"Always approving {tool_name} for this session.")
+            return approved
 
         executor.set_approval_callback(on_approval)
 

@@ -139,17 +139,35 @@ Rules:
 def _collect_project_metadata(cwd: "Path") -> str:
     """Gather directory tree + key config file contents for /init."""
     from pathlib import Path
-    import subprocess
+    import fnmatch
 
     parts: list[str] = []
 
+    # Load .claudeignore patterns for filtering the tree
+    _claudeignore: list[str] = []
+    _ci_path = cwd / ".claudeignore"
+    if _ci_path.exists():
+        try:
+            _claudeignore = [
+                l.strip() for l in _ci_path.read_text(encoding="utf-8").splitlines()
+                if l.strip() and not l.startswith("#")
+            ]
+        except OSError:
+            pass
+
+    def _skipped(name: str) -> bool:
+        _noise = {".git", "node_modules", "__pycache__", ".venv", "venv",
+                  "dist", "build", ".next", ".cache", "target", ".tox"}
+        if name in _noise:
+            return True
+        import fnmatch
+        return any(fnmatch.fnmatch(name, p.lstrip("/").rstrip("/")) for p in _claudeignore)
+
     # 1. Directory tree (max depth 3, skip common noise dirs)
-    skip = {".git", "node_modules", "__pycache__", ".venv", "venv",
-            "dist", "build", ".next", ".cache", "target", ".tox"}
     try:
         lines = ["## Directory structure"]
         for root, dirs, files in os.walk(cwd):
-            dirs[:] = sorted(d for d in dirs if d not in skip)
+            dirs[:] = sorted(d for d in dirs if not _skipped(d))
             depth = len(Path(root).relative_to(cwd).parts)
             if depth > 3:
                 dirs.clear()
@@ -159,10 +177,11 @@ def _collect_project_metadata(cwd: "Path") -> str:
             label = str(rel) if str(rel) != "." else "."
             if depth > 0:
                 lines.append(f"{indent}{label}/")
-            for f in sorted(files)[:20]:  # cap files per dir
+            visible = [f for f in sorted(files) if not _skipped(f)]
+            for f in visible[:20]:  # cap files per dir
                 lines.append(f"{'  ' * (depth + 1)}{f}")
-            if len(files) > 20:
-                lines.append(f"{'  ' * (depth + 1)}... ({len(files) - 20} more)")
+            if len(visible) > 20:
+                lines.append(f"{'  ' * (depth + 1)}... ({len(visible) - 20} more)")
         parts.append("\n".join(lines))
     except Exception:
         pass
@@ -604,7 +623,7 @@ async def async_main() -> int:
 
     # load hooks and fire SessionStart
     hook_runner = HookRunner(load_hooks())
-    if not hook_runner._cfg.is_empty():
+    if not hook_runner.is_empty():
         await hook_runner.run_session_start()
 
     # single task mode

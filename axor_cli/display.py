@@ -320,24 +320,39 @@ class MarkdownRenderer:
 _AUTO_APPROVE = frozenset({"read", "search", "glob", "fetch", "spawn_child", "todo_write", "todo_read"})
 
 
-async def prompt_approval(tool_name: str, args: dict) -> bool:
+async def prompt_approval(tool_name: str, args: dict) -> tuple[bool, bool]:
     """
-    Ask the user to approve a tool call. Returns True to allow, False to deny.
-    read/search/glob/spawn_child are auto-approved (non-destructive).
+    Ask the user to approve a tool call.
+
+    Returns (approved, always_allow):
+        y / Enter  → (True,  False)  — allow once
+        a          → (True,  True)   — allow for all remaining calls of this tool
+        n / other  → (False, False)  — deny
     """
     if tool_name in _AUTO_APPROVE:
-        return True
+        return True, False
 
     args_str = _format_args(args)
     label = f"{yellow(tool_name)}{dim('(' + args_str + ')')}"
-    prompt_str = f"  {label}  {dim('[y/N]')} "
+    hint  = dim("[y/n/a?]")
+    prompt_str = f"\n  {label}  {hint} "
 
     try:
         response = await asyncio.to_thread(input, prompt_str)
-        return response.strip().lower() in ("y", "yes", "")
+        r = response.strip().lower()
+        if r in ("y", "yes", ""):
+            return True, False
+        if r in ("a", "always"):
+            return True, True
+        if r == "?":
+            print(f"  {dim('y')} = allow once   "
+                  f"{dim('a')} = always allow this tool in session   "
+                  f"{dim('n')} = deny")
+            return await prompt_approval(tool_name, args)
+        return False, False
     except (KeyboardInterrupt, EOFError):
         print()
-        return False
+        return False, False
 
 
 # ── Prompt ─────────────────────────────────────────────────────────────────────
