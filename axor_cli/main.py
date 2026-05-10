@@ -30,6 +30,7 @@ for _candidate in [
 from axor_cli import display, auth, adapters, streaming, telemetry
 from axor_cli._version import __version__
 from axor_cli.session_store import save_turn, SessionHistoryLoader
+from axor_cli.skill_commands import load_skill_commands
 
 
 # ── Built-in REPL commands ─────────────────────────────────────────────────────
@@ -157,6 +158,8 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
         from axor_core import presets
         policy_override = presets.get(args.policy)
 
+    skill_cmds = load_skill_commands()
+
     while True:
         try:
             line = display.prompt("> ")
@@ -222,6 +225,12 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
         # ── /help ──────────────────────────────────────────────────────────────
         if line in ("/help", "/?"):
             print(f"\n{_HELP}\n")
+            if skill_cmds:
+                print("Skill commands (from .claude/skills/):")
+                for sc in sorted(skill_cmds.values(), key=lambda s: s.name):
+                    tag = "[bash]" if sc.run else "[task]"
+                    print(f"  /{sc.name:<18} {tag}  {sc.description}")
+                print()
             continue
 
         # ── /model ─────────────────────────────────────────────────────────────
@@ -239,6 +248,29 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
         if line.startswith("/telemetry"):
             telemetry.handle_slash(line)
             continue
+
+        # ── Skill slash commands ────────────────────────────────────────────────
+        if line.startswith("/"):
+            cmd_name = line[1:].split()[0].lower()
+            if cmd_name in skill_cmds:
+                skill = skill_cmds[cmd_name]
+                if skill.run:
+                    display.print_info(f"Running: {skill.run}")
+                    proc = await asyncio.create_subprocess_shell(
+                        skill.run,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                    stdout, _ = await proc.communicate()
+                    if stdout:
+                        print(stdout.decode(errors="replace"), end="")
+                else:
+                    summary = await streaming.run_task(
+                        session, skill.task, policy=policy_override, auto_approve=args.yes
+                    )
+                    if summary.get("output"):
+                        save_turn(skill.task, summary["output"])
+                continue
 
         # ── Governed slash commands (forwarded to session) ─────────────────────
         if line.startswith("/"):
