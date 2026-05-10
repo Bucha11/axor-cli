@@ -72,16 +72,31 @@ async def _stream_run(
     # streaming path — session.executor exposes set_text_callback()
     # Use getattr to avoid depending on GovernedSession internals
     executor = getattr(session, "executor", None) or getattr(session, "_executor", None)
+
+    def _ensure_spinner_stopped() -> None:
+        nonlocal text_received
+        if not text_received:
+            spinner.stop()
+            print()
+            text_received = True
+
     if executor and hasattr(executor, "set_text_callback"):
         def on_text(chunk: str) -> None:
-            nonlocal text_received
-            if not text_received:
-                spinner.stop()
-                print()          # newline between prompt and output
-                text_received = True
+            _ensure_spinner_stopped()
             display.stream_text(chunk)
 
         executor.set_text_callback(on_text)
+
+    if executor and hasattr(executor, "set_tool_callbacks"):
+        def on_tool_start(tool_name: str, args: dict) -> None:
+            _ensure_spinner_stopped()
+            display.print_tool_call(tool_name, args, approved=True)
+
+        def on_tool_end(tool_name: str, args: dict, result: Any) -> None:
+            approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
+            display.print_tool_result(tool_name, str(result), approved=approved)
+
+        executor.set_tool_callbacks(on_tool_start, on_tool_end)
 
     result = await session.run(task, policy=policy)
 
