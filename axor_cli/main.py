@@ -105,9 +105,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tools",
         nargs="+",
-        default=["read", "write", "bash", "search", "glob"],
+        default=["read", "write", "edit", "bash", "search", "glob"],
         metavar="TOOL",
-        help="Tools to enable (default: read write bash search glob)",
+        help="Tools to enable (default: read write edit bash search glob)",
     )
     parser.add_argument(
         "--list-adapters",
