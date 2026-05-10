@@ -99,6 +99,131 @@ async def _fetch_url(url: str) -> str | None:
         return None
 
 
+# ── /init helper ───────────────────────────────────────────────────────────────
+
+_INIT_CONFIG_FILES = [
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
+    "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts",
+    "Makefile", "justfile", "Dockerfile", "docker-compose.yml",
+    ".github/workflows",
+    "README.md", "README.rst", "README",
+]
+
+_INIT_PROMPT = """
+You are generating a CLAUDE.md file for a software project.
+CLAUDE.md is read by AI coding assistants (like you) at the start of every session
+to quickly understand the project without rereading the whole codebase.
+
+Here is the collected project metadata:
+
+{metadata}
+
+Generate a concise, useful CLAUDE.md. Use the `write` tool to save it as `./CLAUDE.md`.
+
+The file should contain:
+1. **One-sentence project overview** — what it does, main technology
+2. **Key commands** — build, test, lint, run, install (use code blocks)
+3. **Project structure** — important directories, 1-line each
+4. **Conventions** — coding style, branch naming, commit format if detectable
+5. **Important notes** — anything an AI assistant must know to avoid mistakes
+
+Rules:
+- Be concise. An AI reads this, not a human. No marketing language.
+- Only include what you can actually see in the metadata — don't invent.
+- Prefer short bullet points over long prose.
+- Put shell commands in ``` blocks so they're easy to copy.
+""".strip()
+
+
+def _collect_project_metadata(cwd: "Path") -> str:
+    """Gather directory tree + key config file contents for /init."""
+    from pathlib import Path
+    import subprocess
+
+    parts: list[str] = []
+
+    # 1. Directory tree (max depth 3, skip common noise dirs)
+    skip = {".git", "node_modules", "__pycache__", ".venv", "venv",
+            "dist", "build", ".next", ".cache", "target", ".tox"}
+    try:
+        lines = ["## Directory structure"]
+        for root, dirs, files in os.walk(cwd):
+            dirs[:] = sorted(d for d in dirs if d not in skip)
+            depth = len(Path(root).relative_to(cwd).parts)
+            if depth > 3:
+                dirs.clear()
+                continue
+            indent = "  " * depth
+            rel = Path(root).relative_to(cwd)
+            label = str(rel) if str(rel) != "." else "."
+            if depth > 0:
+                lines.append(f"{indent}{label}/")
+            for f in sorted(files)[:20]:  # cap files per dir
+                lines.append(f"{'  ' * (depth + 1)}{f}")
+            if len(files) > 20:
+                lines.append(f"{'  ' * (depth + 1)}... ({len(files) - 20} more)")
+        parts.append("\n".join(lines))
+    except Exception:
+        pass
+
+    # 2. Key config files
+    for name in _INIT_CONFIG_FILES:
+        path = cwd / name
+        if path.is_file():
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")
+                # trim large files
+                if len(content) > 4000:
+                    content = content[:4000] + f"\n... (truncated, {len(content)} chars total)"
+                parts.append(f"## {name}\n```\n{content}\n```")
+            except OSError:
+                pass
+        elif path.is_dir():
+            # .github/workflows — list filenames
+            try:
+                yamls = sorted(path.glob("*.yml")) + sorted(path.glob("*.yaml"))
+                if yamls:
+                    parts.append(f"## {name}/\n" + "\n".join(f"  {y.name}" for y in yamls[:10]))
+            except OSError:
+                pass
+
+    return "\n\n".join(parts)
+
+
+async def _run_init(session, args, hook_runner) -> None:
+    """Handle /init: generate CLAUDE.md from project metadata via model."""
+    from pathlib import Path
+
+    cwd = Path.cwd()
+    claude_md = cwd / "CLAUDE.md"
+
+    if claude_md.exists():
+        try:
+            answer = await asyncio.to_thread(
+                input,
+                display.yellow("  CLAUDE.md already exists. Overwrite? [y/N] "),
+            )
+            if answer.strip().lower() not in ("y", "yes"):
+                display.print_info("Aborted.")
+                return
+        except (EOFError, KeyboardInterrupt):
+            print()
+            display.print_info("Aborted.")
+            return
+
+    display.print_info("Collecting project metadata…")
+    metadata = await asyncio.to_thread(_collect_project_metadata, cwd)
+
+    prompt = _INIT_PROMPT.format(metadata=metadata)
+    display.print_info("Generating CLAUDE.md…")
+    await streaming.run_task(
+        session, prompt,
+        auto_approve=True,   # write tool approved automatically for /init
+        hook_runner=hook_runner,
+    )
+
+
 # ── Built-in REPL commands ─────────────────────────────────────────────────────
 
 _HELP = """
@@ -122,6 +247,7 @@ Built-in commands:
   /memory forget <k> Delete memory by key
   /memory search <q> Full-text search memories
   /todos             Show model's current task list
+  /init              Generate CLAUDE.md from the current codebase
   /help              This message
 
 Shortcuts:
@@ -327,6 +453,11 @@ async def repl(
         # ── /telemetry (CLI-local, not governance) ─────────────────────────────
         if line.startswith("/telemetry"):
             telemetry.handle_slash(line)
+            continue
+
+        # ── /init — generate CLAUDE.md ─────────────────────────────────────────
+        if line == "/init":
+            await _run_init(session, args, hook_runner)
             continue
 
         # ── /todos — show current model todo list ──────────────────────────────
