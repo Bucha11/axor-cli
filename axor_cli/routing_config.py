@@ -49,22 +49,42 @@ _DEFAULT_ROUTING_TOML = """\
 # Routing mode: "smart" | "cascade" | "flat"
 #
 #   smart   — SmartModelSelector picks model per task complexity + depth.
-#             Uses axor-core TaskSignal to route cheap tasks to cheap models.
-#   cascade — Explicit depth→model mapping (define [[openrouter.routing.tiers]]).
-#   flat    — Single model for all nodes (set root_model below).
+#             axor-core TaskSignal (FOCUSED/MODERATE/EXPANSIVE) drives tier selection.
+#   cascade — Explicit depth→model mapping via [[openrouter.routing.tiers]].
+#   flat    — Single model for all nodes.
 mode = "smart"
 
-# Root model (depth=0). Pinned in smart mode; used for all nodes in flat mode.
+# Root model pinned at depth=0 in smart/cascade mode.
 root_model = "anthropic/claude-sonnet-4-6"
 
-# Smart mode: switch to free models at this depth and beyond.
+# Smart mode: use free models at this depth and beyond (default: 3).
 prefer_free_at_depth = 3
 
-# Smart mode: hard ceiling on input token price (USD per 1M). Omit for no limit.
+# Smart mode: hard ceiling on input price (USD/1M). Omit = no limit.
 # max_cost_in = 0.30
 
-# Cascade mode: define one tier per depth range.
-# Uncomment and set mode = "cascade" to use explicit tiers.
+# ── Model registry & smart-cascade tier map ───────────────────────────────────
+#
+# Tier 0  flagship   claude-opus-4-7 ($15.00)  gpt-4o ($2.50)  gemini-2.5-pro ($1.25)
+# Tier 1  strong     claude-sonnet-4-6 ($3.00)  kimi-k2 ($0.14)  deepseek-r1 ($0.55)  gemini-2.5-flash ($0.15)
+# Tier 2  fast       deepseek-chat ($0.27)  claude-haiku-4-5 ($0.80)
+# Tier 3  cheap      gpt-4o-mini ($0.15)
+# Tier 4  near-free  llama-3.3-70b ($0.12)  mistral-small ($0.10)  qwen3-8b ($0.06)
+#                    llama-3.3-70b:free  gemma-3-27b:free  qwen3-8b:free
+#
+# Smart selection per node:
+#   base_tier = FOCUSED→2  MODERATE→1  EXPANSIVE→0
+#   effective_tier = min(base_tier + min(depth, 3), 4)
+#   → cheapest model at effective_tier
+#
+#   Examples (depth=1):
+#     FOCUSED   → tier 3 → gpt-4o-mini
+#     MODERATE  → tier 2 → deepseek-chat
+#     EXPANSIVE → tier 1 → kimi-k2  (cheapest strong model)
+#     depth≥3   → tier 4 → llama:free
+
+# ── Cascade mode example ──────────────────────────────────────────────────────
+# Set mode = "cascade" and define tiers to override smart selection.
 #
 # [[openrouter.routing.tiers]]
 # min_depth = 0
@@ -73,7 +93,12 @@ prefer_free_at_depth = 3
 #
 # [[openrouter.routing.tiers]]
 # min_depth = 1
+# max_depth = 2
 # model     = "openai/gpt-4o-mini"
+#
+# [[openrouter.routing.tiers]]
+# min_depth = 3
+# model     = "meta-llama/llama-3.3-70b-instruct:free"
 """
 
 
