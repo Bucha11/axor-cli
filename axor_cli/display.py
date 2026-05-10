@@ -12,6 +12,7 @@ Handles:
 
 import asyncio
 import difflib
+import re as _re
 import sys
 import os
 import time
@@ -196,6 +197,121 @@ def print_success(msg: str) -> None:
 
 def print_hook_block(tool: str, reason: str) -> None:
     print(f"\n{red('  ✗ hook blocked')} {yellow(tool)}: {dim(reason)}")
+
+
+# ── Markdown renderer ─────────────────────────────────────────────────────────
+
+class MarkdownRenderer:
+    """
+    Line-buffered terminal markdown renderer for streaming LLM output.
+
+    Usage:
+        r = MarkdownRenderer()
+        r.feed(chunk)   # call for each streamed text chunk
+        r.flush()       # call once at end to drain any buffered content
+    """
+
+    _FENCE        = _re.compile(r'^```')
+    _HEADING      = _re.compile(r'^(#{1,6}) (.*)')
+    _BULLET       = _re.compile(r'^(\s*)([-*+]|\d+\.) (.*)')
+    _QUOTE        = _re.compile(r'^> (.*)')
+    _HR           = _re.compile(r'^(---+|\*\*\*+|___+)\s*$')
+    _BOLD_ITALIC  = _re.compile(r'\*\*\*(.+?)\*\*\*')
+    _BOLD         = _re.compile(r'\*\*(.+?)\*\*')
+    _ITALIC_STAR  = _re.compile(r'\*(.+?)\*')
+    _ITALIC_UNDER = _re.compile(r'(?<!\w)_(.+?)_(?!\w)')
+    _INLINE_CODE  = _re.compile(r'`([^`\n]+)`')
+
+    def __init__(self) -> None:
+        self._buf: str = ""
+        self._in_code: bool = False
+        self._code_lang: str = ""
+        self._code_lines: list[str] = []
+
+    def feed(self, chunk: str) -> None:
+        self._buf += chunk
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            self._process_line(line)
+
+    def flush(self) -> None:
+        if self._buf:
+            self._process_line(self._buf)
+            self._buf = ""
+        if self._in_code:
+            self._emit_code_block()
+            self._in_code = False
+
+    # ── internal ──────────────────────────────────────────────────────────────
+
+    def _process_line(self, raw: str) -> None:
+        if self._in_code:
+            if raw.strip().startswith("```"):
+                self._emit_code_block()
+                self._in_code = False
+            else:
+                self._code_lines.append(raw)
+        else:
+            stripped = raw.strip()
+            if stripped.startswith("```"):
+                self._in_code = True
+                self._code_lang = stripped[3:].strip()
+                self._code_lines = []
+            else:
+                sys.stdout.write(self._format_line(raw) + "\n")
+                sys.stdout.flush()
+
+    def _emit_code_block(self) -> None:
+        lang = self._code_lang
+        label = f" {lang} " if lang else " "
+        width = max(42, len(label) + 4)
+        bar = "─" * (width - len(label) - 1)
+        header = f"  ┌{label}{bar}┐"
+        footer = f"  └{'─' * (width - 1)}┘"
+        sys.stdout.write("\n" + dim(header) + "\n")
+        for line in self._code_lines:
+            sys.stdout.write(f"  {dim('│')} {line}\n")
+        sys.stdout.write(dim(footer) + "\n\n")
+        sys.stdout.flush()
+        self._code_lines = []
+        self._code_lang = ""
+
+    def _format_line(self, line: str) -> str:
+        if not _COLOR:
+            return line
+        # headings
+        m = self._HEADING.match(line)
+        if m:
+            level = len(m.group(1))
+            text = self._inline(m.group(2))
+            if level == 1:
+                return "\n" + bold(green(text))
+            if level == 2:
+                return "\n" + bold(cyan(text))
+            return bold(text)
+        # horizontal rule
+        if self._HR.match(line):
+            return dim("  " + "─" * 50)
+        # bullet / numbered list
+        m = self._BULLET.match(line)
+        if m:
+            indent, _, content = m.group(1), m.group(2), m.group(3)
+            return indent + dim("• ") + self._inline(content)
+        # blockquote
+        m = self._QUOTE.match(line)
+        if m:
+            return dim("  ▎ ") + self._inline(m.group(1))
+        return self._inline(line)
+
+    def _inline(self, text: str) -> str:
+        if not _COLOR:
+            return text
+        text = self._BOLD_ITALIC.sub(lambda m: bold(m.group(1)), text)
+        text = self._BOLD.sub(lambda m: bold(m.group(1)), text)
+        text = self._ITALIC_STAR.sub(lambda m: _c("3", m.group(1)), text)
+        text = self._ITALIC_UNDER.sub(lambda m: _c("3", m.group(1)), text)
+        text = self._INLINE_CODE.sub(lambda m: cyan(m.group(1)), text)
+        return text
 
 
 # ── Tool approval ──────────────────────────────────────────────────────────────

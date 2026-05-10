@@ -104,6 +104,7 @@ async def _stream_run(
     hook_runner: HookRunner | None = None,
 ) -> None:
     text_received = False
+    renderer = display.MarkdownRenderer()
 
     # streaming path — session.executor exposes set_text_callback()
     # Use getattr to avoid depending on GovernedSession internals
@@ -119,7 +120,7 @@ async def _stream_run(
     if executor and hasattr(executor, "set_text_callback"):
         def on_text(chunk: str) -> None:
             _ensure_spinner_stopped()
-            display.stream_text(chunk)
+            renderer.feed(chunk)
 
         executor.set_text_callback(on_text)
 
@@ -206,6 +207,8 @@ async def _stream_run(
 
     # ensure spinner stopped even on error/empty output
     spinner.stop()
+
+    renderer.flush()
 
     if not text_received:
         # non-streaming adapter — print result all at once
