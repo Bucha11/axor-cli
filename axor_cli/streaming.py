@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-"""
-Streaming execution driver for axor-cli.
+"""Streaming execution driver for axor-cli.
 
 Connects GovernedSession to the terminal:
   - shows spinner while waiting for first token
@@ -18,6 +17,36 @@ from axor_core.contracts.policy import ExecutionPolicy
 
 from axor_cli import display
 from axor_cli.hooks import HookRunner, load_hooks
+
+# Auto-compact when accumulated context exceeds this many tokens with no limit set.
+# With a soft_token_limit the budget engine fires COMPRESS_CONTEXT in the node;
+# this fallback catches sessions that have no explicit limit.
+_AUTO_COMPACT_FLOOR = 80_000
+
+
+def _maybe_auto_compact(session: GovernedSession) -> None:
+    """Compact context when token usage is high, notify user."""
+    total = session.total_tokens_spent()
+    soft_limit = getattr(session._budget_engine, "_soft_limit", None)  # type: ignore[attr-defined]
+
+    if soft_limit:
+        ratio = total / soft_limit
+        threshold = 0.75
+    else:
+        ratio = total / _AUTO_COMPACT_FLOOR
+        threshold = 1.0  # only compact once we hit the floor
+
+    if ratio < threshold:
+        return
+
+    before, after = session.compact_context()
+    if before == 0:
+        return
+    saved = max(0, before - after)
+    pct = int(100 * saved / before) if before > 0 else 0
+    display.print_info(
+        f"auto-compact: {before:,} → {after:,} ctx tokens  ({pct}% freed)"
+    )
 
 
 async def run_task(
@@ -161,6 +190,9 @@ async def _stream_run(
     if hook_runner:
         await hook_runner.run_stop(result.output or "")
 
+    # post-task auto-compact: if context grew large, compact now and warn user
+    _maybe_auto_compact(session)
+
     # ensure spinner stopped even on error/empty output
     spinner.stop()
 
@@ -178,9 +210,15 @@ async def _stream_run(
     summary["cancelled"]     = result.metadata.get("cancelled", False)
     summary["output"]        = result.output or ""
 
+    # compute context fill % for display
+    total_spent = session.total_tokens_spent()
+    soft_limit = getattr(session._budget_engine, "_soft_limit", None)  # type: ignore[attr-defined]
+    ctx_pct = int(100 * total_spent / soft_limit) if soft_limit else None
+
     display.print_completion(
         policy=summary["policy"],
         input_tokens=summary["input_tokens"],
         output_tokens=summary["output_tokens"],
         cancelled=summary["cancelled"],
+        ctx_pct=ctx_pct,
     )

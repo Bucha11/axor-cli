@@ -160,6 +160,7 @@ def print_completion(
     input_tokens: int,
     output_tokens: int,
     cancelled: bool = False,
+    ctx_pct: int | None = None,
 ) -> None:
     total = input_tokens + output_tokens
     if cancelled:
@@ -167,11 +168,17 @@ def print_completion(
     else:
         status = green("✓ done")
 
+    ctx_part = ""
+    if ctx_pct is not None:
+        color = red if ctx_pct >= 90 else (yellow if ctx_pct >= 70 else dim)
+        ctx_part = f" {dim('│')} ctx: {color(f'{ctx_pct}%')}"
+
     print(
         f"\n{dim('  ')}{status} "
         f"{dim('│')} policy: {dim(policy)} "
         f"{dim('│')} tokens: {dim(str(total))} "
         f"{dim(f'(in: {input_tokens} out: {output_tokens})')}"
+        f"{ctx_part}"
     )
 
 
