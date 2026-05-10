@@ -17,6 +17,7 @@ from axor_core import GovernedSession
 from axor_core.contracts.policy import ExecutionPolicy
 
 from axor_cli import display
+from axor_cli.hooks import HookRunner, load_hooks
 
 
 async def run_task(
@@ -24,6 +25,7 @@ async def run_task(
     task: str,
     policy: ExecutionPolicy | None = None,
     auto_approve: bool = False,
+    hook_runner: HookRunner | None = None,
 ) -> dict[str, Any]:
     """
     Run a task and stream output to terminal.
@@ -44,7 +46,7 @@ async def run_task(
     }
 
     try:
-        await _stream_run(session, task, policy, spinner, summary, auto_approve)
+        await _stream_run(session, task, policy, spinner, summary, auto_approve, hook_runner)
     except asyncio.CancelledError:
         spinner.stop()
         summary["cancelled"] = True
@@ -69,6 +71,7 @@ async def _stream_run(
     spinner: display.Spinner,
     summary: dict[str, Any],
     auto_approve: bool = False,
+    hook_runner: HookRunner | None = None,
 ) -> None:
     text_received = False
 
@@ -131,17 +134,32 @@ async def _stream_run(
             approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
             display.print_tool_result(tool_name, str(result), approved=approved)
             _show_diff(tool_name, args, result)
+            if approved and hook_runner and hook_runner.has_post_tool():
+                asyncio.get_event_loop().create_task(
+                    hook_runner.run_post_tool(tool_name, args, result)
+                )
 
         executor.set_tool_callbacks(on_tool_start, on_tool_end)
 
-    if not auto_approve and executor and hasattr(executor, "set_approval_callback"):
+    # Always register approval callback — handles PreToolUse hooks and interactive approval.
+    if executor and hasattr(executor, "set_approval_callback"):
         async def on_approval(tool_name: str, args: dict) -> bool:
             _ensure_spinner_stopped()
+            if hook_runner and hook_runner.has_pre_tool():
+                hook_ok, hook_msg = await hook_runner.run_pre_tool(tool_name, args)
+                if not hook_ok:
+                    display.print_hook_block(tool_name, hook_msg)
+                    return False
+            if auto_approve or tool_name in display._AUTO_APPROVE:
+                return True
             return await display.prompt_approval(tool_name, args)
 
         executor.set_approval_callback(on_approval)
 
     result = await session.run(task, policy=policy)
+
+    if hook_runner:
+        await hook_runner.run_stop(result.output or "")
 
     # ensure spinner stopped even on error/empty output
     spinner.stop()

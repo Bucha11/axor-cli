@@ -29,6 +29,7 @@ for _candidate in [
 
 from axor_cli import display, auth, adapters, streaming, telemetry
 from axor_cli._version import __version__
+from axor_cli.hooks import load_hooks, HookRunner
 from axor_cli.session_store import save_turn, SessionHistoryLoader
 from axor_cli.skill_commands import load_skill_commands
 
@@ -151,7 +152,12 @@ def _parse_args() -> argparse.Namespace:
 
 # ── REPL loop ──────────────────────────────────────────────────────────────────
 
-async def repl(session, adapter: str, args: argparse.Namespace) -> None:
+async def repl(
+    session,
+    adapter: str,
+    args: argparse.Namespace,
+    hook_runner: HookRunner,
+) -> None:
     """Interactive REPL loop."""
     policy_override = None
     if args.policy:
@@ -266,7 +272,8 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
                         print(stdout.decode(errors="replace"), end="")
                 else:
                     summary = await streaming.run_task(
-                        session, skill.task, policy=policy_override, auto_approve=args.yes
+                        session, skill.task, policy=policy_override,
+                        auto_approve=args.yes, hook_runner=hook_runner,
                     )
                     if summary.get("output"):
                         save_turn(skill.task, summary["output"])
@@ -292,7 +299,10 @@ async def repl(session, adapter: str, args: argparse.Namespace) -> None:
         image_refs = _re.findall(r'\[image:\s*([^\]]+)\]', line)
         task_text  = _re.sub(r'\[image:\s*[^\]]+\]', '', line).strip()
         task_payload = build_multimodal_task(task_text or line, image_refs)
-        summary = await streaming.run_task(session, task_payload, policy=policy_override, auto_approve=args.yes)
+        summary = await streaming.run_task(
+            session, task_payload, policy=policy_override,
+            auto_approve=args.yes, hook_runner=hook_runner,
+        )
         if summary.get("output"):
             save_turn(line, summary["output"])
 
@@ -369,17 +379,25 @@ async def async_main() -> int:
             display.print_error(str(e))
             return 1
 
+    # load hooks and fire SessionStart
+    hook_runner = HookRunner(load_hooks())
+    if not hook_runner._cfg.is_empty():
+        await hook_runner.run_session_start()
+
     # single task mode
     if args.task:
         from axor_cli.images import build_multimodal_task
         task_payload = build_multimodal_task(args.task, args.image)
-        await streaming.run_task(session, task_payload, policy=policy_override, auto_approve=args.yes)
+        await streaming.run_task(
+            session, task_payload, policy=policy_override,
+            auto_approve=args.yes, hook_runner=hook_runner,
+        )
         return 0
 
     # interactive REPL
     model = args.model or adapters.default_model(adapter)
     display.print_header(adapter=adapter, model=model, version=__version__)
-    await repl(session, adapter=adapter, args=args)
+    await repl(session, adapter=adapter, args=args, hook_runner=hook_runner)
     return 0
 
 

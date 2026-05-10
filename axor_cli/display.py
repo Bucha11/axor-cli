@@ -187,6 +187,10 @@ def print_success(msg: str) -> None:
     print(f"\n{green('  ✓')} {msg}")
 
 
+def print_hook_block(tool: str, reason: str) -> None:
+    print(f"\n{red('  ✗ hook blocked')} {yellow(tool)}: {dim(reason)}")
+
+
 # ── Tool approval ──────────────────────────────────────────────────────────────
 
 # Tools that run silently without asking the user.
