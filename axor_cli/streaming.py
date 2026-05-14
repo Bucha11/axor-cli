@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-"""
-Streaming execution driver for axor-cli.
+"""Streaming execution driver for axor-cli.
 
 Connects GovernedSession to the terminal:
   - shows spinner while waiting for first token
@@ -17,12 +16,46 @@ from axor_core import GovernedSession
 from axor_core.contracts.policy import ExecutionPolicy
 
 from axor_cli import display
+from axor_cli.hooks import HookRunner, load_hooks
+from axor_cli.permissions import load_permissions
+
+# Auto-compact when accumulated context exceeds this many tokens with no limit set.
+# With a soft_token_limit the budget engine fires COMPRESS_CONTEXT in the node;
+# this fallback catches sessions that have no explicit limit.
+_AUTO_COMPACT_FLOOR = 80_000
+
+
+def _maybe_auto_compact(session: GovernedSession) -> None:
+    """Compact context when token usage is high, notify user."""
+    total = session.total_tokens_spent()
+    soft_limit = getattr(session._budget_engine, "_soft_limit", None)  # type: ignore[attr-defined]
+
+    if soft_limit:
+        ratio = total / soft_limit
+        threshold = 0.75
+    else:
+        ratio = total / _AUTO_COMPACT_FLOOR
+        threshold = 1.0  # only compact once we hit the floor
+
+    if ratio < threshold:
+        return
+
+    before, after = session.compact_context()
+    if before == 0:
+        return
+    saved = max(0, before - after)
+    pct = int(100 * saved / before) if before > 0 else 0
+    display.print_info(
+        f"auto-compact: {before:,} → {after:,} ctx tokens  ({pct}% freed)"
+    )
 
 
 async def run_task(
     session: GovernedSession,
     task: str,
     policy: ExecutionPolicy | None = None,
+    auto_approve: bool = False,
+    hook_runner: HookRunner | None = None,
 ) -> dict[str, Any]:
     """
     Run a task and stream output to terminal.
@@ -39,10 +72,11 @@ async def run_task(
         "output_tokens": 0,
         "cancelled":     False,
         "error":         None,
+        "output":        "",
     }
 
     try:
-        await _stream_run(session, task, policy, spinner, summary)
+        await _stream_run(session, task, policy, spinner, summary, auto_approve, hook_runner)
     except asyncio.CancelledError:
         spinner.stop()
         summary["cancelled"] = True
@@ -66,27 +100,124 @@ async def _stream_run(
     policy: ExecutionPolicy | None,
     spinner: display.Spinner,
     summary: dict[str, Any],
+    auto_approve: bool = False,
+    hook_runner: HookRunner | None = None,
 ) -> None:
     text_received = False
+    renderer = display.MarkdownRenderer()
+    # tools the user approved with 'a' (always) this session
+    _session_always_approved: set[str] = set()
 
     # streaming path — session.executor exposes set_text_callback()
     # Use getattr to avoid depending on GovernedSession internals
     executor = getattr(session, "executor", None) or getattr(session, "_executor", None)
+
+    def _ensure_spinner_stopped() -> None:
+        nonlocal text_received
+        if not text_received:
+            spinner.stop()
+            print()
+            text_received = True
+
     if executor and hasattr(executor, "set_text_callback"):
         def on_text(chunk: str) -> None:
-            nonlocal text_received
-            if not text_received:
-                spinner.stop()
-                print()          # newline between prompt and output
-                text_received = True
-            display.stream_text(chunk)
+            _ensure_spinner_stopped()
+            renderer.feed(chunk)
 
         executor.set_text_callback(on_text)
 
+    # Capture pre-edit file content for diff display.
+    _pre_edit: dict[str, str] = {}
+
+    def _capture_pre_edit(tool_name: str, args: dict) -> None:
+        if tool_name in ("edit", "write"):
+            path = args.get("path") or args.get("file_path") or ""
+            if path:
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        _pre_edit[path] = f.read()
+                except OSError:
+                    _pre_edit[path] = ""
+
+    def _show_diff(tool_name: str, args: dict, result: Any) -> None:
+        if tool_name not in ("edit", "write"):
+            return
+        approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
+        if not approved:
+            return
+        path = args.get("path") or args.get("file_path") or ""
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                new_content = f.read()
+        except OSError:
+            return
+        old_content = _pre_edit.get(path, "")
+        display.print_diff(old_content, new_content, path)
+
+    if executor and hasattr(executor, "set_tool_callbacks"):
+        def on_tool_start(tool_name: str, args: dict) -> None:
+            _ensure_spinner_stopped()
+            _capture_pre_edit(tool_name, args)
+            if auto_approve or tool_name in display._AUTO_APPROVE or tool_name in _session_always_approved:
+                display.print_tool_call(tool_name, args, approved=True)
+
+        def on_tool_end(tool_name: str, args: dict, result: Any) -> None:
+            approved = not (isinstance(result, dict) and result.get("error") == "tool_denied")
+            display.print_tool_result(tool_name, str(result), approved=approved)
+            _show_diff(tool_name, args, result)
+            if approved and hook_runner and hook_runner.has_post_tool():
+                asyncio.get_event_loop().create_task(
+                    hook_runner.run_post_tool(tool_name, args, result)
+                )
+
+        executor.set_tool_callbacks(on_tool_start, on_tool_end)
+
+    # load permissions once for this task
+    perms = load_permissions()
+
+    # Always register approval callback — handles permissions, hooks, and interactive approval.
+    if executor and hasattr(executor, "set_approval_callback"):
+        async def on_approval(tool_name: str, args: dict) -> bool:
+            _ensure_spinner_stopped()
+            # 1. settings.json pattern deny (highest priority)
+            denied, reason = perms.is_denied(tool_name, args)
+            if denied:
+                display.print_hook_block(tool_name, reason)
+                return False
+            # 2. PreToolUse hooks
+            if hook_runner and hook_runner.has_pre_tool():
+                hook_ok, hook_msg = await hook_runner.run_pre_tool(tool_name, args)
+                if not hook_ok:
+                    display.print_hook_block(tool_name, hook_msg)
+                    return False
+            # 3. session-level always-approved (user pressed 'a' earlier)
+            if tool_name in _session_always_approved:
+                return True
+            # 4. auto-approve or interactive prompt
+            if auto_approve or tool_name in display._AUTO_APPROVE:
+                return True
+            approved, always = await display.prompt_approval(tool_name, args)
+            if approved and always:
+                _session_always_approved.add(tool_name)
+                display.print_info(f"Always approving {tool_name} for this session.")
+            return approved
+
+        executor.set_approval_callback(on_approval)
+
     result = await session.run(task, policy=policy)
+
+    if hook_runner:
+        await hook_runner.run_stop(result.output or "")
+
+    # post-task auto-compact: if context grew large, compact now and warn user
+    _maybe_auto_compact(session)
 
     # ensure spinner stopped even on error/empty output
     spinner.stop()
+
+    renderer.flush()
 
     if not text_received:
         # non-streaming adapter — print result all at once
@@ -100,10 +231,17 @@ async def _stream_run(
     summary["input_tokens"]  = result.token_usage.input_tokens
     summary["output_tokens"] = result.token_usage.output_tokens
     summary["cancelled"]     = result.metadata.get("cancelled", False)
+    summary["output"]        = result.output or ""
+
+    # compute context fill % for display
+    total_spent = session.total_tokens_spent()
+    soft_limit = getattr(session._budget_engine, "_soft_limit", None)  # type: ignore[attr-defined]
+    ctx_pct = int(100 * total_spent / soft_limit) if soft_limit else None
 
     display.print_completion(
         policy=summary["policy"],
         input_tokens=summary["input_tokens"],
         output_tokens=summary["output_tokens"],
         cancelled=summary["cancelled"],
+        ctx_pct=ctx_pct,
     )

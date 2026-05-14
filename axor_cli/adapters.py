@@ -3,8 +3,9 @@ from __future__ import annotations
 """
 Adapter registry for axor-cli.
 
-Adapters are loaded lazily — axor-claude / axor-openai / axor-openrouter
-are optional dependencies. Missing adapter gives a helpful install message.
+Adapters are loaded lazily — axor-claude / axor-openai / axor-openrouter are
+optional dependencies. Missing adapter gives a helpful install message.
+
 """
 
 from typing import Any
@@ -67,11 +68,13 @@ def build_session(
     adapter: str,
     api_key: str | None = None,
     model:   str | None = None,
-    tools:   tuple[str, ...] = ("read", "write", "bash", "search", "glob"),
+    tools:   tuple[str, ...] = ("read", "write", "edit", "bash", "search", "glob", "fetch"),
     soft_token_limit: int | None = None,
     system_prompt: str | None = None,
     load_skills: bool = True,
     load_plugins: bool = True,
+    resume: bool = False,
+    thinking_budget: int | None = None,
     telemetry: Any | None = None,
 ) -> GovernedSession:
     """
@@ -82,6 +85,12 @@ def build_session(
     if not info:
         available = ", ".join(_REGISTRY.keys())
         raise ValueError(f"Unknown adapter: '{adapter}'. Available: {available}")
+
+    # apply settings.json permission rules before building the session
+    from axor_cli.permissions import load_permissions
+    perms = load_permissions()
+    if not perms.is_empty():
+        tools = perms.filter_tools(tools)
 
     try:
         mod = __import__(info["module"])
@@ -98,11 +107,17 @@ def build_session(
             "Check your axor adapter version."
         )
 
+    # memory provider — SQLite-backed, scoped to project directory
+    from axor_cli.memory_provider import SQLiteMemoryProvider, project_namespace
+    _mem = SQLiteMemoryProvider()
+
     kwargs: dict[str, Any] = {
-        "api_key":     api_key,
-        "tools":       tools,
-        "load_skills": load_skills,
-        "load_plugins": load_plugins,
+        "api_key":         api_key,
+        "tools":           tools,
+        "load_skills":     load_skills,
+        "load_plugins":    load_plugins,
+        "memory_provider": _mem,
+        "memory_namespace": project_namespace(),
     }
     if soft_token_limit is not None:
         kwargs["soft_token_limit"] = soft_token_limit
@@ -116,6 +131,48 @@ def build_session(
         kwargs["model"] = model
     if system_prompt:
         kwargs["system_prompt"] = system_prompt
+
+    # openrouter: apply routing config from ~/.axor/config.toml [openrouter.routing]
+    if resume:
+        from axor_cli.session_store import SessionHistoryLoader
+        kwargs["_extra_loaders"] = [SessionHistoryLoader()]
+
+    if thinking_budget is not None:
+        kwargs["thinking_budget"] = thinking_budget
+
+    if adapter == "openrouter":
+        from axor_cli.mcp_config import load_mcp_servers
+        mcp_servers = load_mcp_servers()
+        if mcp_servers:
+            kwargs["mcp_servers"] = mcp_servers
+
+        from axor_cli.routing_config import load_routing_config, TierConfig
+        rc = load_routing_config("openrouter")
+        if rc.mode == "cascade" and rc.tiers:
+            try:
+                from axor_openrouter.cascade.tiers import TierSpec
+                kwargs["tiers"] = [
+                    TierSpec(
+                        min_depth=t.min_depth,
+                        max_depth=t.max_depth,
+                        model=t.model,
+                        tier_index=t.tier_index,
+                    )
+                    for t in rc.tiers
+                ]
+                kwargs["smart_cascade"] = False
+            except ImportError:
+                pass
+        elif rc.mode == "flat":
+            kwargs["smart_cascade"] = False
+        else:  # smart (default)
+            kwargs["smart_cascade"] = True
+            if rc.prefer_free_at_depth != 3:
+                kwargs["prefer_free_at_depth"] = rc.prefer_free_at_depth
+            if rc.max_cost_in is not None:
+                kwargs["max_cost_in"] = rc.max_cost_in
+        if rc.root_model and not model:
+            kwargs["model"] = rc.root_model
 
     try:
         return mod.make_session(**kwargs)

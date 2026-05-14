@@ -204,7 +204,14 @@ def _get_key_from_env(adapter: str) -> str | None:
     """Get API key from environment variable."""
     env_var = _ENV_VARS.get(adapter)
     if env_var:
-        return os.environ.get(env_var)
+        val = os.environ.get(env_var, "").strip()
+        if val:
+            return val
+    # check fallback env var names (e.g. OPEN_KEY for openrouter), strip whitespace
+    for fallback in _ENV_VARS_FALLBACK.get(adapter, []):
+        val = os.environ.get(fallback, "").strip()
+        if val:
+            return val
     return None
 
 

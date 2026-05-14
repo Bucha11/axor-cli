@@ -1,119 +1,67 @@
 # axor-cli
 
-[![CI](https://github.com/Bucha11/axor-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Bucha11/axor-cli/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/axor-cli?cacheSeconds=300)](https://pypi.org/project/axor-cli/)
 [![Python](https://img.shields.io/pypi/pyversions/axor-cli?cacheSeconds=300)](https://pypi.org/project/axor-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-
 **Governed agent sessions in your terminal.**
 
-Run Claude (or other LLMs) under axor-core governance — controlled context, explicit tool permissions, token optimization, and full audit trail.
+Run Claude or any OpenRouter model under axor-core governance — controlled tool permissions, token budgets, context compression, hooks, skills, memory, and full audit trail. Feature-compatible with [Claude Code](https://claude.ai/code) configuration files.
 
 ---
 
 ## Installation
 
 ```bash
-# CLI + Claude adapter
-pip install axor-cli[claude]
+# With OpenRouter (200+ models, recommended)
+pip install axor-cli axor-openrouter
 
-# or step by step
-pip install axor-cli
-pip install axor-claude
+# With Claude directly
+pip install axor-cli axor-claude
+
+# With OpenAI
+pip install axor-cli axor-openai
 ```
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
+# Set API key (saved to ~/.axor/config.toml)
+axor openrouter /auth
+
 # Interactive REPL
-axor claude
+axor openrouter
 
 # Single task and exit
-axor claude "refactor the auth module"
+axor openrouter "refactor the auth module"
 
 # With options
-axor claude --policy readonly "review this PR for security issues"
-axor claude --limit 100000 "migrate the entire codebase to Go"
-axor claude --model claude-opus-4-5 "design the new architecture"
+axor openrouter --policy readonly "review this PR"
+axor openrouter --limit 100000 --model anthropic/claude-opus-4-7 "large migration"
+axor openrouter -y "scaffold a FastAPI project"   # auto-approve all tools
 ```
 
 ---
 
 ## Authentication
 
-On first run, axor asks for your API key and saves it to `~/.axor/config.toml` (permissions: 600):
+On first run, axor prompts for an API key and saves it to `~/.axor/config.toml` (permissions: 600).
 
-```
-$ axor claude
-
-  No API key found for 'claude'.
-  (checked: --api-key flag, ANTHROPIC_API_KEY env var, ~/.axor/config.toml)
-
-  Anthropic API key (hidden): ****
-  Save to ~/.axor/config.toml for future sessions? [Y/n]: y
-  ✓ Key saved to ~/.axor/config.toml (permissions: 600)
-```
-
-Key priority (highest to lowest):
+Key priority (highest wins):
 
 | Source | When used |
 |--------|-----------|
-| `--api-key` flag | One-off override, never saved |
-| `ANTHROPIC_API_KEY` env var | CI/CD, containers |
+| `--api-key` flag | One-off, never saved |
+| Env var (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`) | CI/CD, containers |
 | `~/.axor/config.toml` | Persistent, set via `/auth` |
 
-Manage saved keys with `/auth` in the REPL:
-
 ```
-> /auth              # set or update key (prompts, then saves)
-> /auth --show       # show where key is loaded from (never shows the key)
+> /auth              # prompt and save
+> /auth --show       # show source (never shows the key)
 > /auth --clear      # remove saved key
 ```
-
----
-
-## Interactive REPL
-
-```
-$ axor claude
-axor v0.1.0 │ adapter: claude │ model: claude-sonnet-4-5
-Type a task, a /command, or 'exit' to quit.
-
-> refactor the auth module to add rate limiting
-  ↳ read(path='auth.py') → def authenticate(token):…
-  ↳ write(path='auth.py') → …
-✓ done │ policy: moderate_mutative │ tokens: 1,247 (in: 800 out: 447)
-
-> /cost
-  → Tokens spent this session: 1,247
-
-> /compact
-  → Context compaction requested — will apply on next execution.
-
-> exit
-  → Bye.
-```
-
-### REPL commands
-
-| Command | Class | Description |
-|---------|-------|-------------|
-| `/auth` | built-in | Set or update API key |
-| `/auth --clear` | built-in | Remove saved key |
-| `/auth --show` | built-in | Show key source (never the key itself) |
-| `/model` | built-in | List available models |
-| `/help` | built-in | All commands |
-| `/cost` | governed | Token usage for this session |
-| `/policy` | governed | Last execution policy |
-| `/compact` | governed | Compress context |
-| `/status` | governed | Session overview |
-| `/tools` | governed | Tools available to current policy |
-| `exit` / `quit` / `^D` | — | Exit |
-
-Governed commands (`/cost`, `/policy`, etc.) are handled by axor-core — they never reach the executor.
 
 ---
 
@@ -122,81 +70,241 @@ Governed commands (`/cost`, `/policy`, etc.) are handled by axor-core — they n
 ```
 axor <adapter> [task] [options]
 
-Arguments:
-  adapter           Adapter: claude, openai
-  task              Single task — runs and exits (skips REPL)
+Adapters:  openrouter, claude, openai
 
 Options:
-  -p, --policy      Preset: readonly, sandboxed, standard, federated
-  -l, --limit       Soft token limit (budget optimization signals)
-  -m, --model       Model override (e.g. claude-opus-4-5)
-  --api-key         API key for this session (never saved)
-  --tools           Tools to enable (default: read write bash search glob)
-  --no-skills       Skip CLAUDE.md and .claude/skills/
-  --no-plugins      Skip .claude/plugins/
-  --list-adapters   Show installed adapters and exit
-  --version         Show version
+  -p, --policy PRESET   readonly | sandboxed | standard | federated
+  -l, --limit TOKENS    Soft token limit (triggers auto-compact and budget signals)
+  -m, --model NAME      Model override (e.g. anthropic/claude-opus-4-7)
+      --api-key KEY      API key for this session only (never saved)
+      --tools TOOL ...   Tools to enable (default: read write edit bash search glob fetch)
+      --yes, -y          Auto-approve all tool calls without prompting
+      --resume           Inject last session's context as starting history
+      --image PATH       Attach image file (can be repeated, vision models only)
+      --thinking TOKENS  Extended thinking budget in tokens (e.g. 8000)
+      --no-skills        Skip CLAUDE.md and .claude/skills/
+      --no-plugins       Skip .claude/plugins/
+      --list-adapters    Show installed adapters and exit
+      --version          Show version
 ```
 
 ---
 
-## Examples
+## REPL commands
 
-```bash
-# Analysis only — no writes, no bash
-axor claude --policy readonly "find all security issues in auth.py"
+### Built-in
 
-# Specific tools only
-axor claude --tools read search "find all TODO comments"
+| Command | Description |
+|---------|-------------|
+| `/auth [--show\|--clear]` | Manage API key |
+| `/model [name]` | Show available models; restart hint for switching |
+| `/init` | Generate `CLAUDE.md` from the current codebase |
+| `/memory` | List memories saved for this project |
+| `/memory add <text>` | Save text to persistent memory |
+| `/memory forget <key>` | Delete a memory by key |
+| `/memory search <query>` | Full-text search memories |
+| `/todos` | Show the model's current task list |
+| `/telemetry [on\|off\|preview]` | Manage local telemetry |
+| `/help` | All commands including loaded skills |
+| `!<text>` | Shorthand for `/memory add <text>` |
+| `exit` / `quit` / `^D` | Exit |
 
-# Large migration with budget
-axor claude --limit 200000 "rewrite the API layer to use async/await"
+### Governed (handled by axor-core)
 
-# Specific model
-axor claude --model claude-opus-4-5 "design the new microservices architecture"
+| Command | Description |
+|---------|-------------|
+| `/cost` | Token usage for this session |
+| `/policy` | Last execution policy |
+| `/compact` | Compress context (reduces token usage) |
+| `/clear` | Clear all context fragments and cache |
+| `/status` | Session overview |
+| `/tools` | Tools available under the current policy |
 
-# No extension loading (faster startup)
-axor claude --no-skills --no-plugins "quick question"
+### Skills
 
-# CI — reads key from env, single task, exits
-ANTHROPIC_API_KEY=sk-ant-... axor claude "run code review"
-```
-
----
-
-## Adapters
-
-```bash
-axor --list-adapters
-
-Available adapters:
-  claude       installed
-  openai       not installed  →  pip install axor-openai
-```
-
-Each adapter package must expose `make_session(**kwargs) -> GovernedSession`.
+Skills in `.claude/skills/` or `~/.claude/skills/` are available as `/skillname`. See [Skills](#skills) below.
 
 ---
 
-## Streaming output
+## Tool approval
 
-When an adapter supports streaming (e.g. `axor-claude`), text is printed to the terminal as it arrives — no waiting for the full response. A spinner shows while Claude is thinking.
+When a tool needs approval, axor shows:
 
-Non-streaming adapters print the full output when execution completes.
+```
+  write(path='auth.py', content='...')  [y/n/a/?]
+```
+
+| Key | Action |
+|-----|--------|
+| `y` / Enter | Allow once |
+| `n` | Deny |
+| `a` | Always allow this tool for the rest of the session |
+| `?` | Show help |
+
+Tools that are always auto-approved (non-destructive): `read`, `search`, `glob`, `fetch`.
+
+---
+
+## @file and @url references
+
+Prefix any file path or URL with `@` to inject its content into the task:
+
+```
+> review @./src/auth.py for security issues
+> summarize @https://docs.example.com/api
+> compare @./old.py and @./new.py
+```
+
+The content is prepended as a `<context src="...">` block; the `@ref` is stripped from the task text.
+
+---
+
+## Configuration files
+
+axor-cli reads the same config files as [Claude Code](https://claude.ai/code).
+
+### CLAUDE.md
+
+Place a `CLAUDE.md` in your project root. It's loaded as the system prompt context at session start, giving the model standing instructions about your project.
+
+Generate one automatically:
+
+```
+> /init
+```
+
+### `.claudeignore`
+
+Works like `.gitignore`. Files and directories matching these patterns are excluded from `read`, `glob`, `search`, and `/init` tree walks.
+
+```
+# .claudeignore
+*.pyc
+__pycache__
+node_modules
+.venv
+dist/
+secrets.env
+```
+
+### `~/.claude/settings.json` and `.claude/settings.json`
+
+Tool permission rules and hooks. Project settings override user settings.
+
+```json
+{
+  "permissions": {
+    "allow": ["Read", "Bash(npm *)"],
+    "deny":  ["Bash(rm -rf *)", "Write(/etc/*)"]
+  },
+  "hooks": {
+    "PreToolUse":  [{"matcher": "bash", "command": "echo 'Running: $TOOL_INPUT'"}],
+    "PostToolUse": [{"command": "notify-send 'Tool done'"}],
+    "Stop":        [{"command": "say Done"}],
+    "SessionStart":[{"command": "npm run build 2>&1 || true"}]
+  }
+}
+```
+
+Permission rule format: `ToolName` (blanket) or `ToolName(glob_pattern)` (pattern match on primary arg).
+
+Hook env vars: `TOOL_NAME`, `TOOL_INPUT` (JSON), `TOOL_RESULT`. PreToolUse hooks block the call on non-zero exit.
+
+---
+
+## Skills
+
+Skills are markdown files in `.claude/skills/` (project) or `~/.claude/skills/` (user).
+
+```markdown
+---
+description: Run the full test suite and show coverage
+run: pytest --cov=src --cov-report=term-missing
+---
+```
+
+Or as an agent task:
+
+```markdown
+---
+description: Write and run a benchmark for the current module
+---
+Write a benchmark for the current module using timeit, run it, and show results.
+```
+
+Skills appear in `/help` and are invoked as `/skillname`.
+
+---
+
+## Memory
+
+axor stores persistent memories in `~/.axor/memory.db` (SQLite), scoped to the project directory.
+
+```
+> !Always use type hints in this project.
+  ✓ Saved to memory: Always use type hints in this project.
+
+> /memory search type hints
+> /memory forget <key>
+> /memory
+```
+
+Memories are injected into the system prompt at session start.
+
+---
+
+## Auto-compact
+
+When accumulated tokens exceed 75% of `--limit` (or 80,000 tokens with no limit), axor automatically compresses context and reports:
+
+```
+  → auto-compact: 45,231 → 12,108 ctx tokens  (73% freed)
+```
+
+Use `/compact` to trigger manually.
 
 ---
 
 ## Config file
 
-`~/.axor/config.toml` — auto-created with `chmod 600`:
+`~/.axor/config.toml` — auto-created with permissions 600:
 
 ```toml
+[openrouter]
+api_key = "sk-or-..."
+
 [claude]
 api_key = "sk-ant-..."
 
-[openai]
-api_key = "sk-..."
+# OpenRouter routing (optional)
+[openrouter.routing]
+mode             = "smart"   # smart | cascade | flat
+prefer_free_at_depth = 3
+root_model       = "anthropic/claude-sonnet-4-6"
+
+# MCP servers (optional)
+[[mcp.servers]]
+name    = "filesystem"
+command = "npx"
+args    = ["-y", "@modelcontextprotocol/server-filesystem", "."]
 ```
+
+See [axor-openrouter](https://github.com/Bucha11/axor-openrouter) for full routing and MCP documentation.
+
+---
+
+## Available adapters
+
+```
+$ axor --list-adapters
+
+Available adapters:
+  openrouter   installed
+  claude       installed
+  openai       not installed  →  pip install axor-openai
+```
+
+Each adapter must expose `make_session(**kwargs) -> GovernedSession`.
 
 ---
 
@@ -205,27 +313,22 @@ api_key = "sk-..."
 ```
 axor-cli/
 ├── axor_cli/
-│   ├── main.py        CLI entrypoint, REPL loop, argument parsing
-│   ├── auth.py        Key management — ~/.axor/config.toml, priority chain
-│   ├── adapters.py    Adapter registry, lazy imports, build_session()
-│   ├── display.py     Terminal formatting — color, spinner, streaming output
-│   ├── streaming.py   Connects GovernedSession to terminal display
+│   ├── main.py           CLI entrypoint, REPL loop, argument parsing
+│   ├── adapters.py       Adapter registry, lazy imports, build_session()
+│   ├── auth.py           Key management — ~/.axor/config.toml, priority chain
+│   ├── display.py        Terminal output — color, spinner, markdown renderer
+│   ├── streaming.py      Connects GovernedSession to terminal (callbacks, approval)
+│   ├── hooks.py          Hook runner — PreToolUse, PostToolUse, Stop, SessionStart
+│   ├── permissions.py    Settings.json allow/deny rules
+│   ├── skill_commands.py Skill discovery from .claude/skills/*.md
+│   ├── memory_provider.py SQLite memory store with FTS5 full-text search
+│   ├── session_store.py  Session history persistence for --resume
+│   ├── mcp_config.py     MCP server config loader
+│   ├── routing_config.py OpenRouter cascade/smart routing config
+│   ├── images.py         Multimodal image encoding (data URIs)
+│   ├── telemetry.py      Optional telemetry bridge
 │   └── _version.py
 └── tests/
-    ├── conftest.py         tmp_home fixture, anthropic mock
-    └── unit/
-        ├── test_auth.py        11 tests — config file, permissions, priority
-        ├── test_adapters.py     8 tests — registry, availability, session build
-        ├── test_display.py      display formatting
-        └── test_streaming.py   11 tests — output, callback, error, policy override
-```
-
----
-
-## Running tests
-
-```bash
-pytest tests/unit/   # no API key needed, anthropic SDK mocked
 ```
 
 ---
@@ -233,8 +336,8 @@ pytest tests/unit/   # no API key needed, anthropic SDK mocked
 ## Requirements
 
 - Python 3.11+
-- `axor-core >= 0.1.0`
-- At least one adapter: `axor-claude` or `axor-openai`
+- `axor-core >= 0.5.0`
+- At least one adapter: `axor-openrouter`, `axor-claude`, or `axor-openai`
 
 ---
 
