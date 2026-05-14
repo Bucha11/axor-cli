@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "axor-cli"
-version = "0.5.2"
+version = "0.5.3"
 description = "CLI for axor-core governance kernel — governed agent sessions in your terminal"
 readme = "README.md"
 license = { text = "MIT" }
