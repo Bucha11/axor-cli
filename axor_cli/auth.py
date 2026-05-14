@@ -52,6 +52,8 @@ _ENV_VARS: dict[str, str] = {
     "openrouter":  "OPENROUTER_API_KEY",
 }
 
+_ENV_VARS_FALLBACK: dict[str, list[str]] = {}
+
 
 # ============================================================================
 # Public API
