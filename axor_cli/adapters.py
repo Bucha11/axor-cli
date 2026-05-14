@@ -5,6 +5,7 @@ Adapter registry for axor-cli.
 
 Adapters are loaded lazily — axor-claude / axor-openai / axor-openrouter are
 optional dependencies. Missing adapter gives a helpful install message.
+
 """
 
 from typing import Any
@@ -34,7 +35,6 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "models": [
             "anthropic/claude-opus-4-7",
             "anthropic/claude-sonnet-4-6",
-            "openai/gpt-4o",
             "openai/gpt-4o-mini",
             "meta-llama/llama-3.3-70b-instruct:free",
         ],

@@ -52,11 +52,6 @@ _ENV_VARS: dict[str, str] = {
     "openrouter":  "OPENROUTER_API_KEY",
 }
 
-# Fallback env var names checked when the primary is not set
-_ENV_VARS_FALLBACK: dict[str, list[str]] = {
-    "openrouter": ["OPEN_KEY"],
-}
-
 
 # ============================================================================
 # Public API
@@ -73,7 +68,7 @@ def resolve_api_key(adapter: str, flag_key: str | None = None) -> str | None:
         3. Config file (~/.axor/config.toml)
     
     Args:
-        adapter: Name of the adapter (e.g., "claude", "openai")
+        adapter: Name of the adapter (e.g., "claude", "openai", "openrouter")
         flag_key: Optional API key from CLI flag (highest priority)
     
     Returns:
@@ -270,7 +265,7 @@ def _escape_toml_value(val: str) -> str:
     """Escape a string for a TOML basic (double-quoted) string.
 
     Per the TOML spec, a basic string may contain `\\b`, `\\t`, `\\n`, `\\f`,
-    `\\r`, `\\"`, and `\\\\` literal escapes; any other control character
+    `\\r`, `\\\"``, and `\\\\` literal escapes; any other control character
     (U+0000–U+001F except those listed) must be `\\uXXXX`-escaped. Plain
     `replace("\\\\", "\\\\\\\\").replace('"', '\\\\"')` drops a newline or
     NUL into the TOML output as a literal byte, producing a file that

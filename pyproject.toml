@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "axor-cli"
-version = "0.3.0"
+version = "0.4.0"
 description = "CLI for axor-core governance kernel — governed agent sessions in your terminal"
 readme = "README.md"
 license = { text = "MIT" }
@@ -22,18 +22,24 @@ classifiers = [
 ]
 
 # axor-core required; adapters are optional — install what you need.
-# >=0.4.0 because PolicyComposer federation invariant + keyword_relevance
-# public API are used by the model/adapter wiring.
+# >=0.5.0 for BudgetTracker.subscribe(), BudgetPolicyEngine.suggest_tier_shift(),
+# ExecutionEnvelope.cache_hints/depth/deterministic, and new trace event types.
 dependencies = [
     "axor-core>=0.5.0,<0.6",
 ]
 
 [project.optional-dependencies]
-claude    = ["axor-claude>=0.1.0"]
-openai    = ["axor-openai>=0.1.0"]
-telemetry = ["axor-telemetry>=0.1.0"]
-all       = ["axor-claude>=0.1.0", "axor-openai>=0.1.0", "axor-telemetry>=0.1.0"]
-dev       = ["pytest>=8.0", "pytest-asyncio>=0.23", "axor-telemetry>=0.1.0"]
+claude      = ["axor-claude>=0.1.0"]
+openai      = ["axor-openai>=0.1.0"]
+openrouter  = ["axor-openrouter>=0.1.0"]
+telemetry   = ["axor-telemetry>=0.1.0"]
+all         = [
+    "axor-claude>=0.1.0",
+    "axor-openai>=0.1.0",
+    "axor-openrouter>=0.1.0",
+    "axor-telemetry>=0.1.0",
+]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "axor-telemetry>=0.1.0"]
 
 [project.scripts]
 axor = "axor_cli.main:main"
