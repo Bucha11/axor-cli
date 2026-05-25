@@ -45,6 +45,7 @@ _USER_SETTINGS    = Path.home() / ".claude" / "settings.json"
 _PROJECT_SETTINGS = Path(".claude") / "settings.json"
 
 _HOOK_TIMEOUT = 30  # seconds
+_TRUST_PROJECT_HOOKS_ENV = "AXOR_TRUST_PROJECT_HOOKS"
 
 
 @dataclass
@@ -64,15 +65,34 @@ class HookConfig:
         return not (self.pre_tool or self.post_tool or self.stop or self.session_start)
 
 
-def load_hooks(cwd: Path | None = None) -> HookConfig:
+def load_hooks(
+    cwd: Path | None = None,
+    *,
+    trust_project_hooks: bool | None = None,
+) -> HookConfig:
     """
     Load hooks from ~/.claude/settings.json then .claude/settings.json.
     Both files are merged; project settings are loaded last (take precedence
     when two hooks have the same matcher + command).
     """
     cwd = cwd or Path.cwd()
+    trust_project = (
+        os.environ.get(_TRUST_PROJECT_HOOKS_ENV, "").strip() == "1"
+        if trust_project_hooks is None else trust_project_hooks
+    )
     config = HookConfig()
-    for path in [_USER_SETTINGS, cwd / _PROJECT_SETTINGS]:
+    paths = [_USER_SETTINGS]
+    project_path = cwd / _PROJECT_SETTINGS
+    if project_path.exists():
+        if trust_project:
+            paths.append(project_path)
+        else:
+            log.warning(
+                "Skipping project hooks from %s. Set %s=1 to trust and enable them.",
+                project_path,
+                _TRUST_PROJECT_HOOKS_ENV,
+            )
+    for path in paths:
         if not path.exists():
             continue
         try:
@@ -162,9 +182,30 @@ class HookRunner:
             await _exec(spec.command, env)
 
 
+# Environment variables that must never leak into hook or skill subprocesses.
+# Hooks are defined in user/project settings files that may be committed to
+# version control — passing secrets to them is a supply-chain exfil vector.
+_SECRET_ENV_PATTERNS = (
+    "KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL", "PASSWD",
+    "AUTH", "PRIVATE", "ANTHROPIC", "OPENAI", "AZURE",
+)
+
+
+def _sanitize_env(base: dict[str, str], extra: dict[str, str]) -> dict[str, str]:
+    """Return a copy of base env with secret-looking variables stripped, then
+    extra_env overlaid. extra_env (axor-controlled event vars) is always kept."""
+    upper = {k.upper(): k for k in base}
+    safe = {
+        k: v for k, v in base.items()
+        if not any(pat in k.upper() for pat in _SECRET_ENV_PATTERNS)
+    }
+    safe.update(extra)
+    return safe
+
+
 async def _exec(command: str, extra_env: dict[str, str]) -> tuple[int, str]:
     """Run a hook shell command. Returns (returncode, stdout+stderr)."""
-    env = {**os.environ, **extra_env}
+    env = _sanitize_env(os.environ.copy(), extra_env)
     try:
         proc = await asyncio.create_subprocess_shell(
             command,

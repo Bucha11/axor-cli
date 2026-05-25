@@ -76,6 +76,8 @@ def build_session(
     resume: bool = False,
     thinking_budget: int | None = None,
     telemetry: Any | None = None,
+    daemon_socket: str | None = None,
+    mode: str = "library",
 ) -> GovernedSession:
     """
     Import the adapter package and build a GovernedSession.
@@ -118,7 +120,10 @@ def build_session(
         "load_plugins":    load_plugins,
         "memory_provider": _mem,
         "memory_namespace": project_namespace(),
+        "mode":            mode,
     }
+    if daemon_socket is not None:
+        kwargs["daemon_socket"] = daemon_socket
     if soft_token_limit is not None:
         kwargs["soft_token_limit"] = soft_token_limit
 

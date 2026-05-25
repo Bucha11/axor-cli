@@ -336,8 +336,23 @@ axor-cli/
 ## Requirements
 
 - Python 3.11+
-- `axor-core >= 0.5.0`
-- At least one adapter: `axor-openrouter`, `axor-claude`, or `axor-openai`
+- [`axor-core`](https://github.com/Bucha11/axor-core) >= 0.5.0
+- At least one adapter: [`axor-claude`](https://github.com/Bucha11/axor-claude), `axor-openrouter`, or `axor-openai`
+
+---
+
+## Ecosystem
+
+| Package | Role |
+|---------|------|
+| [`axor-core`](https://github.com/Bucha11/axor-core) | Governance kernel |
+| [`axor-claude`](https://github.com/Bucha11/axor-claude) | Claude / Claude Code adapter — `axor claude` subcommand |
+| [`axor-memory-sqlite`](https://github.com/Bucha11/axor-memory-sqlite) | Cross-session memory (`/memory`, `!` shorthand) |
+| [`axor-telemetry`](https://github.com/Bucha11/axor-telemetry) | Privacy-preserving governance feedback (`/telemetry`) |
+| [`axor-classifier-simple`](https://github.com/Bucha11/axor-classifier-simple) | ML task signal derivation (optional) |
+| [`axor-classifier-llm`](https://github.com/Bucha11/axor-classifier-llm) | LLM verifier for gray-zone escalation (optional) |
+| [`axor-langchain`](https://github.com/Bucha11/axor-langchain) | LangChain governance middleware |
+| [`axor-benchmarks`](https://github.com/Bucha11/axor-benchmarks) | Governance proof layer |
 
 ---
 

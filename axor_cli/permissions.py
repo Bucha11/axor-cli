@@ -34,6 +34,7 @@ Both files are merged; project settings are loaded last.
 
 import fnmatch
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,7 @@ _USER_SETTINGS    = Path.home() / ".claude" / "settings.json"
 _PROJECT_SETTINGS = Path(".claude") / "settings.json"
 
 _RULE_RE = re.compile(r'^(\w+)(?:\((.+)\))?$')
+log = logging.getLogger("axor.cli.permissions")
 
 
 @dataclass
@@ -104,7 +106,8 @@ def load_permissions(cwd: Path | None = None) -> PermissionsConfig:
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            log.warning("Could not read permissions from %s: %s", path, exc)
             continue
         perms = data.get("permissions", {})
         for raw in perms.get("allow", []):

@@ -29,7 +29,7 @@ for _candidate in [
 
 from axor_cli import display, auth, adapters, streaming, telemetry
 from axor_cli._version import __version__
-from axor_cli.hooks import load_hooks, HookRunner
+from axor_cli.hooks import load_hooks, HookRunner, _sanitize_env
 from axor_cli.session_store import save_turn, SessionHistoryLoader
 from axor_cli.skill_commands import load_skill_commands
 
@@ -356,6 +356,20 @@ def _parse_args() -> argparse.Namespace:
         help="Enable extended thinking with this token budget (e.g. 8000)",
     )
     parser.add_argument(
+        "--daemon-socket",
+        metavar="PATH",
+        default=None,
+        help="Delegate tool execution to AxorDaemon at this Unix socket path. "
+             "The daemon must be started separately with 'axor-daemon start'.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["library", "production", "strict"],
+        default="library",
+        help="Execution isolation mode (default: library). Use 'production' or "
+             "'strict' for hardened deployments.",
+    )
+    parser.add_argument(
         "--list-adapters",
         action="store_true",
         help="List available adapters and exit",
@@ -499,8 +513,16 @@ async def repl(
                         skill.run,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
+                        env=_sanitize_env(os.environ.copy(), {}),
                     )
-                    stdout, _ = await proc.communicate()
+                    try:
+                        stdout, _ = await asyncio.wait_for(
+                            proc.communicate(), timeout=30
+                        )
+                    except asyncio.TimeoutError:
+                        proc.kill()
+                        display.print_error(f"Skill '{skill.name}' timed out after 30s")
+                        stdout = b""
                     if stdout:
                         print(stdout.decode(errors="replace"), end="")
                 else:
@@ -607,6 +629,8 @@ async def async_main() -> int:
             resume=args.resume,
             thinking_budget=args.thinking,
             telemetry=pipeline,
+            daemon_socket=args.daemon_socket,
+            mode=args.mode,
         )
     except Exception as e:
         display.print_error(f"Could not start session: {e}")
